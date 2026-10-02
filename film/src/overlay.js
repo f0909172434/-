@@ -266,7 +266,7 @@ export class Overlay {
         break;
       }
       case 'credits': {
-        let y = 330;
+        let y = 402 - (c.lines.length - 1) * 45;
         c.lines.forEach((ln, i) => {
           const a = envelope(T, c.start + i * 1.4, c.end, 1.4, 1.6);
           if (ln.name) { this.text(ln.name, BW / 2, y, CINZEL(400, 34), C_HUD(0.95 * a), { align: 'center', ls: 16 }); y += 44; }
