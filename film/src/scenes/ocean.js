@@ -115,8 +115,8 @@ vec3 skyBase(vec3 d){
   vec3 c = mix(hor, mid, smoothstep(0.0, 0.13, e));
   c = mix(c, zen, smoothstep(0.08, 0.65, e));
   c += vec3(1.1, 0.48, 0.16) * pow(sd, 12.0) * 0.55;
-  c += vec3(2.4, 1.2, 0.48) * pow(sd, 110.0) * 0.9;
-  c += vec3(7.0, 4.2, 2.0) * pow(sd, 1400.0) * 3.0;
+  c += vec3(2.4, 1.2, 0.48) * pow(sd, 110.0) * 0.6;
+  c += vec3(7.0, 4.2, 2.0) * pow(sd, 1400.0) * 2.0;
   return c;
 }
 vec3 skyCol(vec3 d, float detail){
@@ -310,7 +310,7 @@ export default class Ocean {
             float spark = texture2D(uNoise, vX0 * 5.3 + vec2(uWTime * 0.21, -uWTime * 0.13)).a * texture2D(uNoise, vX0 * 8.1 - vec2(uWTime * 0.17, uWTime * 0.11)).b;
             spark = mix(smoothstep(0.30, 0.52, spark) * 3.0 + 0.15, 1.0, far);
             float glit = D * fvh / (4.0 * nv) * spark;
-            c += vec3(5.0, 2.9, 1.3) * glit * 0.14;
+            c += vec3(5.0, 2.9, 1.3) * glit * 0.10;
             // aerial perspective
             vec3 hd = normalize(vec3(-v.x, 0.0, -v.z));
             float fog = 1.0 - exp(-dist * 0.0022);
@@ -362,7 +362,7 @@ export default class Ocean {
           if (portAbove(S) > 0.0) { gl_FragColor = vec4(0.0); return; }
           float tmax = 34.0;
           if (d.y > 0.0) tmax = min(tmax, max(-S.y, 0.0) / d.y);
-          const int N = 14;
+          const int N = 20;
           float dt = tmax / float(N);
           float j = hash12(gl_FragCoord.xy + fract(uTime * 7.31) * 91.0);
           float acc = 0.0;
@@ -377,9 +377,19 @@ export default class Ocean {
           vec3 col = vec3(0.30, 0.80, 0.68) * acc * ph * 0.075;
           gl_FragColor = vec4(col, 1.0);
         }` });
-      const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); q.frustumCulled = false; q.renderOrder = 20;
-      this.godrays = q;
-      this.scene.add(q);
+      // rendered at half resolution into its own target, then composited additively into the frame
+      m.blending = THREE.NoBlending; m.transparent = false;
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); q.frustumCulled = false;
+      this.grScene = new THREE.Scene(); this.grScene.add(q);
+      this.grRT = new THREE.WebGLRenderTarget(Math.max(2, Math.round(ctx.width / 2)), Math.max(2, Math.round(ctx.height / 2)),
+        { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+      const cm = new THREE.ShaderMaterial({
+        uniforms: { tGR: { value: this.grRT.texture } }, vertexShader: QUAD_VERT, depthTest: false, depthWrite: false, transparent: true,
+        blending: THREE.AdditiveBlending,
+        fragmentShader: `uniform sampler2D tGR; varying vec2 vNdc; void main(){ gl_FragColor = vec4(texture2D(tGR, vNdc * 0.5 + 0.5).rgb, 1.0); }` });
+      const cq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cm); cq.frustumCulled = false; cq.renderOrder = 20;
+      this.godrays = cq;
+      this.scene.add(cq);
     }
 
     // ---- 4. marine snow (wrapped box around the camera, depth-of-field sprites)
@@ -792,7 +802,7 @@ export default class Ocean {
     const uw = smoothstep(6.3, 7.4, t);
     const post = {
       exposure: lerp(0.8, 1.3, uw),
-      bloomStrength: lerp(0.65, 0.7, uw), bloomThreshold: lerp(1.6, 1.15, uw), bloomKnee: 0.7, bloomRadius: 0.85,
+      bloomStrength: lerp(0.5, 0.7, uw), bloomThreshold: lerp(1.6, 1.15, uw), bloomKnee: 0.7, bloomRadius: 0.85,
       streak: lerp(0.28, 0.12, uw), streakTint: [lerp(1.0, 0.4, uw), lerp(0.66, 0.9, uw), lerp(0.38, 1.0, uw)],
       ca: 0.0022, vignette: lerp(0.38, 0.5, uw), grain: 0.05,
       saturation: lerp(1.1, 1.12, uw), contrast: lerp(1.12, 1.05, uw),
@@ -800,11 +810,19 @@ export default class Ocean {
       lift: [0.0, lerp(0.0, 0.004, uw), lerp(0.0, 0.008, uw)],
     };
     const target = t >= 10.4 ? cl.A.clone() : null;
-    return { scene: this.scene, camera: cam, target, post };
+    const self = this;
+    return {
+      scene: this.scene, camera: cam, target, post,
+      render(r, rt) {
+        if (self.godrays.visible) { r.setRenderTarget(self.grRT); r.clear(); r.render(self.grScene, cam); }
+        r.setRenderTarget(rt); r.clear(); r.render(self.scene, cam);
+      },
+    };
   }
 
   dispose() {
     this.scene.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
-    this.noise?.dispose();
+    this.noise?.dispose(); this.grRT?.dispose();
+    this.grScene?.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
   }
 }

@@ -912,7 +912,7 @@ export default class Humans {
     m.name = 'dome'; this.sceneWide.add(m);
     this.smearScene = new THREE.Scene();
     const sm = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-      vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: { ...this.domeU, uMode: { value: 1 } }, side: THREE.BackSide, depthWrite: false, depthTest: false,
+      vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: { ...this.domeU, uMode: { value: 1 }, tLow: { value: null } }, side: THREE.BackSide, depthWrite: false, depthTest: false,
     }));
     sm.frustumCulled = false;
     this.smearScene.add(sm);
