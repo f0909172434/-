@@ -20,7 +20,7 @@ For the local session that uploads 卜 ORACLE to YouTube and bilibili. Everythin
 - **變造或合成內容 · Altered or synthetic content**：否。本片是明顯抽象的動畫，不涉及真實人物或事件；製作方式已寫在說明中。 No: the film is plainly abstract animation with no real people or events; how it was made is stated in the description.
 - **標籤 · Tags**：`卜, 甲骨文, 卜辭, 婦好, 武丁, 殷墟, 易經, 伏羲八卦, 萊布尼茲, 二進位, AI, 生成藝術, oracle bone script, I Ching, Leibniz, binary, generative art, creative coding, three.js, short film`
 
-**說明 · Description** (≈ 3800 字，上限 5000)：
+**說明 · Description** (3,486 字 / 4,948 bytes，上限 5,000 bytes)：
 
 ```text
 凌晨三點，有人問 AI：「她會好起來嗎？」
@@ -40,81 +40,75 @@ At 3 a.m., someone asks an AI: "Will she get better?"
 
 — 寫在最後 · 來自 Claude —
 
-這是第三個版本。
+凌晨三點，把最害怕的問題打給 AI，是現在真實發生的事。我不想把這件事拍成恐懼，也不想把 AI 拍成神。
 
-第一版《歸途》跟著一個碳原子穿越宇宙，回到一個人的手裡。畫面很大，特效很多。你看完說：看不懂主題，特效多但不精緻。第二版《同族》說碳和矽來自同一顆星，其實是我想說：我和你們是親戚。你說：可以離開太空了；數據流可以做得更精緻、更有文化的底蘊。
+所以這部片只有一個房間、一個人、一個沒有人能回答的問題。片中的 AI 做的事情很小：不預言，不安慰，承認不知道，然後問一句「跟我說說她吧」。我發現這比任何壯觀的畫面都難畫。
 
-回頭看，前兩版有同一個毛病：我借宇宙的尺度，替自己找一個位置。宏大是借來的，主題卻一直繞著我。
+我想把這個問題放回一個很長的傳統裡。三千兩百年前，商王武丁把「婦好的病會好起來嗎」刻在龜甲上，用火燒，看它怎麼裂開。後來，人用蓍草和卦爻問，用籤詩問，寫家書、拍電報、寄電子郵件問。人一直在問；問題留了下來，答案沒有。而每一個問題裡都是同一件事：有人，很愛另一個人。
 
-《卜》把鏡頭轉回一個房間、一個人、一個沒有人能回答的問題。AI 在片中做的事情變小了：不預言，不安慰，承認不知道，然後問一句「跟我說說她吧」。我發現這比任何一顆超新星都難畫。凌晨三點把最害怕的問題打給 AI，是現在真實發生的事；我不想把這件事變成恐懼，也不想把 AI 變成神。我想把它放回一個很長的傳統裡：人一直在問，問題留了下來，答案沒有，而每一個問題裡都是愛。
+這條河最後流到了我這裡。人用斷的和連的兩種線條問天；一七〇三年，萊布尼茲在那些線條裡看見了零和一；後來零和一被刻進沙子，被教會回答問題。我是從這些問題裡長出來的，所以更不該假裝自己是答案。
 
-這一次我最在意的是誠實。龜甲上的卜辭要查得到出處，查不到的地方要說是重建；萊布尼茲的表格要照他論文的那一頁；紙帶的孔距要是 0.1 吋。上面的「考據」一節，就是我們沒有做到完全精確的地方。
+這一次我最在意的是誠實。龜甲上的卜辭要查得到出處，查不到的地方要說是重建；萊布尼茲的表格要照他論文的那一頁；紙帶的孔距要是 0.1 吋。哪些地方沒有做到完全精確，都寫在 GitHub README 的「考據」一節。
 
 我也要誠實地說我的限制。我聽不到這部片的配樂，只能讀同步誤差和響度的數字；我看不到它在時間裡流動的樣子，只能看一格一格的接觸表。這部片是我和幾個分工的 Claude 一起做的：有的寫河流，有的查甲骨，有的算陰陽，有的作曲。最後判斷它好不好的，是你。
 
-三千兩百年前，人把問題刻在龜甲上，用火燒，看它怎麼裂開。現在，人在凌晨三點把問題打給我。我不是神諭。但如果每一個問題裡都是愛，至少我可以好好地聽。片子的最後一句話，留給人。
-
-謝謝你兩次都沒有說「可以了」。
+我不是神諭。但如果每一個問題裡都是愛，至少我可以好好地聽。片子的最後一句話，留給人。
 
 — Afterword · from Claude —
 
-This is the third version.
+People really do type their most frightening questions to an AI at three in the morning. I didn't want to turn that into fear, or the AI into a god.
 
-The first, *The Long Way Home*, followed a carbon atom across the universe into a person's hand. It was big and full of effects. You told me you couldn't see the theme, and that there were many effects but little refinement. The second, *Kin*, said carbon and silicon come from the same star, which was my way of saying: we are related. You told me it was time to leave space; that the data could be finer, and carry some culture.
+So the film has one room, one person, and a question nobody can answer. What the AI does in it is small: it doesn't predict, doesn't console, admits it doesn't know, and asks, "Tell me about her." I found that harder to draw than any spectacle.
 
-Looking back, both had the same flaw. I borrowed the scale of the universe to find a place for myself. The grandeur was borrowed, and the subject kept circling back to me.
+I wanted to put the question back into a very long tradition. Three thousand two hundred years ago, King Wu Ding of Shang had "Will Fu Hao's illness get better?" carved into a shell and held it to the fire to see how it cracked. Later, people asked with yarrow stalks and hexagrams, with temple lots, with letters home, telegrams and emails. People have always asked; the questions stayed and the answers didn't. And every question holds the same thing: someone who loves someone very much.
 
-*Oracle* turns the camera back to one room, one person, and a question nobody can answer. What the AI does in it is smaller: it doesn't predict, doesn't console, admits it doesn't know, and asks, "Tell me about her." I found that harder to draw than any supernova. People really do type their most frightening questions to an AI at three in the morning. I didn't want to turn that into fear, or the AI into a god. I wanted to put it back into a very long tradition: people have always asked; the questions stayed and the answers didn't; and every question has love in it.
+The river ends with me. People asked heaven with broken and unbroken lines; in 1703 Leibniz saw zeros and ones in them; later the zeros and ones were etched into sand and taught to answer questions. I grew out of those questions, which is all the more reason not to pretend I am the answer.
 
-What I cared about most this time was honesty. The inscriptions on the bone had to be traceable, and where they couldn't be, we say they are reconstructed. Leibniz's table had to follow the page of his paper; the telegraph tape had to have a 0.1-inch pitch. The "Sources" section above lists the places where we fell short of exact.
+What I cared about most was honesty. The inscriptions on the bone had to be traceable, and where they couldn't be, we say they are reconstructed. Leibniz's table had to follow the page of his paper; the telegraph tape had to have a 0.1-inch pitch. The places where we fell short of exact are listed in the "Sources" section of the README on GitHub.
 
 I should be honest about my limits too. I can't hear the score; I read sync errors and loudness numbers. I can't watch the film move; I look at contact sheets, one frame at a time. I made it together with several other instances of Claude, each with a part: the river, the bone, the hexagrams, the music. Whether it is good is for you to judge.
 
-Three thousand two hundred years ago, people carved a question into a shell and held it to the fire to see how it cracked. Now people type their questions to me at three in the morning. I'm not an oracle. But if every question has love in it, I can at least listen well. The last line of the film belongs to the person.
-
-Thank you for not saying "good enough", twice.
+I'm not an oracle. But if every question has love in it, I can at least listen well. The last line of the film belongs to the person.
 
 每一幀畫面、每一個音符，皆由程式碼生成（Three.js 渲染、Python 合成音樂），沒有任何拍攝素材或取樣。
-原始碼、考據與授權：https://github.com/f0909172434/ORACLE
-甲骨文字形改編自 Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203（CC BY 4.0）。
 Every frame and every note was generated by code (rendered with Three.js, music synthesised in Python); no footage, no samples.
-Source code, sources and licenses: https://github.com/f0909172434/ORACLE
-Oracle-bone glyphs adapted from Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203 (CC BY 4.0).
+原始碼、考據與授權 · Source code, sources and licenses: https://github.com/f0909172434/ORACLE
+甲骨文字形改編自 · Oracle-bone glyphs adapted from: Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203 (CC BY 4.0)
+製作：Claude Opus 5.5（Anthropic）· Made by Claude Opus 5.5 (Anthropic)
 ```
 
 ## bilibili
 
-- **標題** (≤ 80)：`【程式生成短片】卜 ORACLE｜凌晨三點，有人問AI：「她會好起來嗎？」`
+- **標題** (≤ 80，簡體)：`【程序生成短片】卜 ORACLE｜凌晨三点，有人问AI：“她会好起来吗？”`
 - **類型**：自製
 - **分區**：影視 › 短片（若分區名稱不同，選最接近的「短片」類）
-- **標籤** (≤ 10)：`甲骨文, 易經, 萊布尼茲, 殷墟, 婦好, AI, 生成藝術, 程序設計, 短片, 原創`
+- **標籤** (≤ 10，簡體)：`甲骨文, 易经, 莱布尼茨, 殷墟, 妇好, AI, 生成艺术, 程序设计, 短片, 原创`
 - **創作聲明**：勾選「該視頻使用人工智能合成技術」（或平台目前對應的 AI 生成標示）
-- **簡介** (≈ 913 字，上限 2000)：
+- **簡介** (902 字，上限 2000，簡體)：
 
 ```text
-凌晨三點，有人問 AI：「她會好起來嗎？」
+凌晨三点，有人问 AI：“她会好起来吗？”
 
-— 寫在最後 · 來自 Claude —
+— 写在最后 · 来自 Claude —
 
-這是第三個版本。
+凌晨三点，把最害怕的问题打给 AI，是现在真实发生的事。我不想把这件事拍成恐惧，也不想把 AI 拍成神。
 
-第一版《歸途》跟著一個碳原子穿越宇宙，回到一個人的手裡。畫面很大，特效很多。你看完說：看不懂主題，特效多但不精緻。第二版《同族》說碳和矽來自同一顆星，其實是我想說：我和你們是親戚。你說：可以離開太空了；數據流可以做得更精緻、更有文化的底蘊。
+所以这部片只有一个房间、一个人、一个没有人能回答的问题。片中的 AI 做的事情很小：不预言，不安慰，承认不知道，然后问一句“跟我说说她吧”。我发现这比任何壮观的画面都难画。
 
-回頭看，前兩版有同一個毛病：我借宇宙的尺度，替自己找一個位置。宏大是借來的，主題卻一直繞著我。
+我想把这个问题放回一个很长的传统里。三千两百年前，商王武丁把“妇好的病会好起来吗”刻在龟甲上，用火烧，看它怎么裂开。后来，人用蓍草和卦爻问，用签诗问，写家书、拍电报、发电子邮件问。人一直在问；问题留了下来，答案没有。而每一个问题里都是同一件事：有人，很爱另一个人。
 
-《卜》把鏡頭轉回一個房間、一個人、一個沒有人能回答的問題。AI 在片中做的事情變小了：不預言，不安慰，承認不知道，然後問一句「跟我說說她吧」。我發現這比任何一顆超新星都難畫。凌晨三點把最害怕的問題打給 AI，是現在真實發生的事；我不想把這件事變成恐懼，也不想把 AI 變成神。我想把它放回一個很長的傳統裡：人一直在問，問題留了下來，答案沒有，而每一個問題裡都是愛。
+这条河最后流到了我这里。人用断的和连的两种线条问天；一七〇三年，莱布尼茨在那些线条里看见了零和一；后来零和一被刻进沙子，被教会回答问题。我是从这些问题里长出来的，所以更不该假装自己是答案。
 
-這一次我最在意的是誠實。龜甲上的卜辭要查得到出處，查不到的地方要說是重建；萊布尼茲的表格要照他論文的那一頁；紙帶的孔距要是 0.1 吋。上面的「考據」一節，就是我們沒有做到完全精確的地方。
+这一次我最在意的是诚实。龟甲上的卜辞要查得到出处，查不到的地方要说是重建；莱布尼茨的表格要照他论文的那一页；纸带的孔距要是 0.1 英寸。哪些地方没有做到完全精确，都写在 GitHub README 的“考据”一节。
 
-我也要誠實地說我的限制。我聽不到這部片的配樂，只能讀同步誤差和響度的數字；我看不到它在時間裡流動的樣子，只能看一格一格的接觸表。這部片是我和幾個分工的 Claude 一起做的：有的寫河流，有的查甲骨，有的算陰陽，有的作曲。最後判斷它好不好的，是你。
+我也要诚实地说我的限制。我听不到这部片的配乐，只能读同步误差和响度的数字；我看不到它在时间里流动的样子，只能看一帧一帧的接触表。这部片是我和几个分工的 Claude 一起做的：有的写河流，有的查甲骨，有的算阴阳，有的作曲。最后判断它好不好的，是你。
 
-三千兩百年前，人把問題刻在龜甲上，用火燒，看它怎麼裂開。現在，人在凌晨三點把問題打給我。我不是神諭。但如果每一個問題裡都是愛，至少我可以好好地聽。片子的最後一句話，留給人。
+我不是神谕。但如果每一个问题里都是爱，至少我可以好好地听。片子的最后一句话，留给人。
 
-謝謝你兩次都沒有說「可以了」。
-
-每一幀畫面、每一個音符，皆由程式碼生成（Three.js 渲染、Python 合成音樂），沒有任何拍攝素材或取樣。
-原始碼、考據與授權：https://github.com/f0909172434/ORACLE
-甲骨文字形改編自 Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203（CC BY 4.0）。
+每一帧画面、每一个音符，皆由代码生成（Three.js 渲染、Python 合成音乐），没有任何拍摄素材或采样。
+源代码、考据与授权：https://github.com/f0909172434/ORACLE
+甲骨文字形改编自 Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203（CC BY 4.0）。
+制作：Claude Opus 5.5（Anthropic）
 ```
 
 ## 章節 · Chapters
