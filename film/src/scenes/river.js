@@ -25,14 +25,14 @@ import { PathLines } from '../lib/pathlines.js';
 import { Rand, hash1 } from '../lib/random.js';
 import { clamp, lerp, smoothstep, easeInOutCubic, easeOutCubic, easeInOutSine, envelope } from '../lib/ease.js';
 import { River, RIVER, flowSpeed } from '../lib/riverflow.js';
-import { rig, basis, focusS, focusDist, focusRet, viewTime, eraAt, eraBounds, CRACK, MEM_S } from '../lib/riverrig.js';
+import { rig, basis, focusS, focusDist, focusRet, viewTime, eraAt, eraBounds, CRACK, MEM_S, STANZA } from '../lib/riverrig.js';
 import { crackGeometry } from '../lib/crack.js';
 import * as D from '../lib/riverdata.js';
 
 const G_REF = 45;                       // uTime = tau - 45 for the river fields
 const V_MAX = 0.5;                      // mid-stream speed (units / s)
 const C = (c, k = 1) => [c.r * k, c.g * k, c.b * k];
-const mixc = (a, b, k) => [a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k];
+const mixc = (a, b, k) => new THREE.Color(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k);
 const WARM_LINE = mixc(PAL.line, PAL.c, 0.82);   // paper lit by fire / memory
 
 export default class RiverScene {
@@ -49,14 +49,15 @@ export default class RiverScene {
     const path = this.river.path(0.25);
 
     // ---- fields
-    this.tfR = new TextField(ctx, { atlas: this.atlas, focus: 14, aperture: 0.06, maxBlur: 26, fade: [0.7, 2.2, 52, 84] });
+    this.tfR = new TextField(ctx, { atlas: this.atlas, focus: 14, aperture: 0.04, maxBlur: 22, fade: [1.4, 3.4, 52, 84] });
     this.tfR.setPaths([path], { samples: 1200 });
     this.tfH = new TextField(ctx, { atlas: this.atlas, focus: 9, aperture: 0.05, maxBlur: 20, fade: [0.5, 1.5, 0, 0] });
     this.tfW = new TextField(ctx, { atlas: this.atlas, focus: 6, aperture: 0.16, maxBlur: 40, fade: [0.35, 1.2, 0, 0] });
-    this.tfM = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.06, maxBlur: 26, fade: [0.7, 2.2, 50, 80] });
+    this.tfM = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.045, maxBlur: 22, fade: [1.4, 3.6, 50, 80] });
     this.tfM.setPaths([path], { samples: 1200 });
     this.tfB = new TextField(ctx, { atlas: this.atlasBig, focus: 10, aperture: 0.04, maxBlur: 20, fade: [0.4, 1.2, 0, 0] });
     this.tfB.setPaths([path], { samples: 1200 });
+    this.tfL = new TextField(ctx, { atlas: this.atlasBig, focus: 6, aperture: 0, fade: [0.2, 0.6, 0, 0] });
 
     // fonts first (every candidate string, so measure() is exact), then build
     await this.atlas.load(this.corpusItems());
@@ -65,19 +66,20 @@ export default class RiverScene {
 
     const R = this.buildRiver();
     await this.tfR.prepare(R.items); this.tfR.set(R.items);
-    this.plR = new PathLines({ resolution: this.res, tf: this.tfR, aperture: 0.06, fade: [0.7, 2.2, 52, 84] });
+    this.plR = new PathLines({ resolution: this.res, tf: this.tfR, aperture: 0.04, fade: [1.4, 3.4, 52, 84] });
     this.plR.set(R.segs);
 
     const M = this.buildMemory();
     await this.tfM.prepare(M.items); this.tfM.set(M.items);
-    this.plM = new PathLines({ resolution: this.res, tf: this.tfM, aperture: 0.06, fade: [0.7, 2.2, 50, 80] });
+    this.plM = new PathLines({ resolution: this.res, tf: this.tfM, aperture: 0.045, fade: [1.4, 3.6, 50, 80] });
     this.plM.set(M.segs);
 
     const Wc = this.buildWarm();
     await this.tfW.prepare(Wc); this.tfW.set(Wc);
 
     const B = this.buildBig();
-    await this.tfB.prepare(B); this.tfB.set(B);
+    await this.tfB.prepare(B.stanza); this.tfB.set(B.stanza);
+    await this.tfL.prepare(B.line); this.tfL.set(B.line);
 
     this.ex = this.buildExhibits();
     await this.tfH.prepare(this.ex.items); this.tfH.set(this.ex.items);
@@ -88,7 +90,7 @@ export default class RiverScene {
 
     for (const m of [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh,
       this.tfR.mesh, this.tfM.mesh, this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh,
-      this.conv.mesh, this.tfB.mesh]) this.scene.add(m);
+      this.conv.mesh, this.tfB.mesh, this.tfL.mesh]) this.scene.add(m);
   }
 
   // ------------------------------------------------------------------------------------------ corpus / fonts
@@ -111,19 +113,19 @@ export default class RiverScene {
 
   // punched-tape geometry from the real glyph metrics: code holes 0.072 in, feed holes 0.046 in, pitch 0.1 in
   measureHoles() {
-    const ink = t => { const L = this.tfR.measure({ text: t, font: 'mono' }); return L.ink[2] - L.ink[0]; };
-    this.hole = { big: Math.max(0.2, ink('●')), small: Math.max(0.1, ink('•')) };
+    const g = t => { const L = this.tfR.measure({ text: t, font: 'mono' }); return { w: Math.max(0.1, L.ink[2] - L.ink[0]), cx: 0.5 * (L.ink[0] + L.ink[2]), cy: 0.5 * (L.ink[1] + L.ink[3]), desc: -L.ext[1] }; };
+    this.hole = { big: g('●'), small: g('•') };
   }
   // a tape of `cols` (ITA2 columns) with pitch p, as mono rows: tracks 1, 2, feed, 3, 4, 5 (top to bottom)
+  // Each row is placed with anchor [0, 0] at (x + dx, y + dy) so that hole c is centred at (x + (c + 0.5) p, y).
   tapeRows(cols, p) {
-    const sizeBig = 0.72 * p / this.hole.big, sizeSmall = 0.46 * p / this.hole.small;
     const rows = [];
     const bits = [0, 1, -1, 2, 3, 4];
     for (let r = 0; r < 6; r++) {
-      const b = bits[r];
+      const b = bits[r], g = b < 0 ? this.hole.small : this.hole.big;
       const str = cols.map(c => b < 0 ? '•' : (c.code[b] === '1' ? '●' : ' ')).join('');
-      const size = b < 0 ? sizeSmall : sizeBig;
-      rows.push({ text: str, size, tracking: p / size - 0.6, y: (2.5 - r) * p, feed: b < 0 });
+      const size = (b < 0 ? 0.46 : 0.72) * p / g.w;
+      rows.push({ text: str, size, tracking: p / size - 0.6, y: (2.5 - r) * p, dx: 0.5 * p - g.cx * size, dy: -(g.desc + g.cy) * size, feed: b < 0 });
     }
     return rows;
   }
@@ -157,7 +159,7 @@ export default class RiverScene {
     };
     const qItem = (size, I, alpha = 1) => {
       const [lang, q] = pickQ();
-      const ai = r.next() < 0.07;
+      const ai = r.next() < 0.03;
       return { text: q, font: D.LATIN.has(lang) ? 'latin' : 'sans', weight: 400, size, anchor: [0, 0], color: ai ? PAL.si : PAL.line, intensity: I * (ai ? 1.1 : 1), alpha };
     };
     const width = it => this.tfR.measure(it).width * it.size;
@@ -170,8 +172,11 @@ export default class RiverScene {
     const stamp = () => `0${r.int(0, 4)}:${String(r.int(0, 59)).padStart(2, '0')}`;
 
     // lanes in normalised lateral coordinate u = n / half; heroes on a few, fill everywhere
-    const heroU = [-0.86, -0.6, -0.33, -0.07, 0.2, 0.46, 0.72];
-    const fillU = []; for (let i = 0; i < 46; i++) fillU.push(-0.985 + 1.97 * (i + 0.5) / 46);
+    const heroU = [-0.84, -0.58, -0.3, -0.05, 0.22, 0.47, 0.71].map(u => u + r.range(-0.05, 0.05));
+    // fill lanes: random, denser mid-stream (the current carries most of the questions), never closer than 0.012
+    const fillU = [];
+    while (fillU.length < 62) { const u = Math.sin((r.next() * 2 - 1) * Math.PI / 2) * 0.99; if (fillU.every(v => Math.abs(v - u) > 0.012)) fillU.push(u); }
+    fillU.sort((a, b) => a - b);
     const S0 = 0.6, S1 = RIVER.S - 1;
 
     // walk a lane: generator(era, s, u) returns { len } after pushing its items, or null to skip a gap
@@ -196,8 +201,8 @@ export default class RiverScene {
           const P = place(it, s, n, r.range(0.0, 0.05), 0);
           // the AI's annotation under some lines: its embedding, or the hour it was asked
           const k = r.next();
-          if (k < 0.45) items.push({ text: embeds[r.int(0, embeds.length - 1)], font: 'mono', size: it.size * 0.3, anchor: [0, 1], path: 0, s: P.s0, off: [it.off[0] - 0.012, n], speed: P.speed, color: PAL.si, intensity: 0.55 });
-          else if (k < 0.7) items.push({ text: stamp(), font: 'mono', size: it.size * 0.34, anchor: [0, 1], path: 0, s: P.s0, off: [it.off[0] - 0.012, n], speed: P.speed, color: PAL.line, intensity: 0.45 });
+          if (k < 0.24) items.push({ text: embeds[r.int(0, embeds.length - 1)], font: 'mono', size: it.size * 0.3, anchor: [0, 1], path: 0, s: P.s0, off: [it.off[0] - 0.012, n], speed: P.speed, color: PAL.si, intensity: 0.4 });
+          else if (k < 0.5) items.push({ text: stamp(), font: 'mono', size: it.size * 0.34, anchor: [0, 1], path: 0, s: P.s0, off: [it.off[0] - 0.012, n], speed: P.speed, color: PAL.line, intensity: 0.4 });
           return { len };
         }
         return gens.fill(e, s, u, true);
@@ -208,7 +213,7 @@ export default class RiverScene {
         const z = big ? 1.5 : 1;
         if (e === 0) {
           const it = qItem(r.range(0.065, 0.11) * (big ? 1.6 : 1), r.range(0.45, 0.85));
-          if (r.next() < 0.06) { it.text = embeds[r.int(0, embeds.length - 1)]; it.font = 'mono'; it.weight = undefined; it.color = PAL.si; it.intensity = 0.4; }
+          if (r.next() < 0.03) { it.text = embeds[r.int(0, embeds.length - 1)]; it.font = 'mono'; it.weight = undefined; it.color = PAL.si; it.intensity = 0.4; }
           const len = width(it); place(it, s, n, h, 0); return { len };
         }
         if (e === 1) {   // 1998: e-mail and Usenet / BBS lines in monospace
@@ -224,18 +229,18 @@ export default class RiverScene {
           const len = width(it); place(it, s, n, h, 1); return { len };
         }
         if (e === 2) {   // 1931: punched tape (ITA2) and printed strips
-          if (r.next() < 0.62) {
-            const msg = D.TELEGRAMS[r.int(0, D.TELEGRAMS.length - 1)], cols = tapeOf(msg);
-            const p = r.range(0.034, 0.05) * (big ? 1.25 : 1), len = cols.length * p;
+          if (r.next() < 0.36) {
+            const m1 = r.int(0, D.TELEGRAMS.length - 1), msg = D.TELEGRAMS[m1] + ' ' + D.TELEGRAMS[(m1 + 5) % D.TELEGRAMS.length], cols = tapeOf(msg);
+            const p = r.range(0.03, 0.04) * (big ? 1.25 : 1), len = cols.length * p;
             const h0 = 0.05 + 3.5 * p + h;
             const rows = this.tapeRows(cols, p);
             let P = null;
             for (const row of rows) {
-              const it = { text: row.text, font: 'mono', size: row.size, tracking: row.tracking, anchor: [0, 0.5], color: PAL.line, intensity: row.feed ? 0.45 : 0.8 };
-              const q = place(it, s, n, h0 + row.y, 2); P = P || q;
+              const it = { text: row.text, font: 'mono', size: row.size, tracking: row.tracking, anchor: [0, 0], color: PAL.line, intensity: row.feed ? 0.28 : 0.55 };
+              const q = place(it, s + row.dx, n, h0 + row.y + row.dy, 2); P = P || q;
             }
             const show = items[items.length - 1].show;
-            for (const y of [3.44, -3.44]) seg(s, P.Tv, P.speed, [0, h0 + y * p, n], [len, h0 + y * p, n], 0.0035, PAL.line, 0.5, show);
+            for (const y of [3.44, -3.44]) seg(s, P.Tv, P.speed, [0, h0 + y * p, n], [len, h0 + y * p, n], 0.003, PAL.line, 0.42, show);
             if (r.next() < 0.5) {   // the printed strip under it
               const sz = 0.75 * p / 0.6;
               const it = { text: msg, font: 'type', size: sz, tracking: p / sz - 0.6, anchor: [0, 0.5], color: PAL.line, intensity: 0.75 };
@@ -254,7 +259,7 @@ export default class RiverScene {
             const text = D.LETTER_ZH[r.int(0, D.LETTER_ZH.length - 1)], size = r.range(0.07, 0.11) * z;
             const nch = [...text].length, dur = 0.09 * nch, t0 = r.range(-5, 1.5);
             const it = { text, font: 'kai', vertical: true, size, anchor: [0.5, 0], color: PAL.line, intensity: 0.85, reveal: [t0, t0 + dur] };
-            place(it, s, n, h + nch * size + 0.02, 3);
+            place(it, s, n, h + 0.02, 3);
             return { len: size * 1.6 };
           }
           const text = D.LETTER_EN[r.int(0, D.LETTER_EN.length - 1)], size = r.range(0.1, 0.15) * z;
@@ -267,7 +272,7 @@ export default class RiverScene {
           if (k < 0.34) {
             const [hd, poem] = D.SLIP_POEMS[r.int(0, D.SLIP_POEMS.length - 1)], size = r.range(0.045, 0.065) * z;
             const it = { text: poem.join('\n'), font: 'serif', vertical: true, size, lineHeight: 1.45, anchor: [0.5, 0], color: PAL.line, intensity: 0.85 };
-            const P = place(it, s, n, h + 7 * size + 0.03, 4);
+            const P = place(it, s, n, h + 0.035, 4);
             // the slip's frame: a printed double border
             const w = 4 * 1.45 * size + 0.04, hh = 7 * size + 0.07, show = it.show;
             for (const g of [0, 0.012]) {
@@ -281,16 +286,17 @@ export default class RiverScene {
             const nS = r.int(2, 6), P = place({ text: ' ', font: 'mono', size: 0.01, anchor: [0, 0], color: PAL.line, intensity: 0 }, s, n, 0, 4);
             const show = items[items.length - 1].show;
             let x = 0;
+            const tilt = r.range(-0.05, 0.05);
             for (let j = 0; j < nS; j++) {
-              const L = r.range(0.5, 0.75) * z, a = r.range(-0.5, 0.5);
-              seg(s, P.Tv, P.speed, [x, h, n + r.range(-0.05, 0.05)], [x + Math.sin(a) * L, h + Math.cos(a) * L * 0.55, n], 0.011, PAL.line, 0.55, show);
-              x += r.range(0.04, 0.12);
+              const L = r.range(0.55, 0.7) * z, x0 = r.range(0, 0.06), y0 = h + 0.012 + j * 0.022;
+              seg(s, P.Tv, P.speed, [x0, y0, n], [x0 + L, y0 + L * tilt, n], 0.008, PAL.line, 0.42, show);
+              x = Math.max(x, x0 + L);
             }
-            return { len: x + 0.3 };
+            return { len: x + 0.2 };
           }
           const text = D.SLIP_ASK[r.int(0, D.SLIP_ASK.length - 1)], size = r.range(0.05, 0.075) * z;
           const it = { text, font: 'serif', vertical: true, size, anchor: [0.5, 0], color: PAL.line, intensity: 0.7 };
-          place(it, s, n, h + [...text].length * size + 0.02, 4);
+          place(it, s, n, h + 0.02, 4);
           return { len: size * 1.8 };
         }
         if (e === 5) {   // 800 BCE: yarrow stalks drifting, hexagrams drawn in the water, the diviner's question
@@ -302,39 +308,33 @@ export default class RiverScene {
             let L = 0;
             for (let j = 0; j < nS; j++) {
               const len = r.range(0.5, 0.85) * z, x0 = r.range(0, 0.25), y0 = h + j * 0.012;
-              seg(s, P.Tv, P.speed, [x0, y0, n + r.range(-0.04, 0.04)], [x0 + len, y0 + r.range(-0.03, 0.03), n + r.range(-0.04, 0.04)], 0.0045, warm, 0.55, show);
+              seg(s, P.Tv, P.speed, [x0, y0, n + r.range(-0.04, 0.04)], [x0 + len, y0 + r.range(-0.03, 0.03), n + r.range(-0.04, 0.04)], 0.0035, warm, 0.42, show);
               L = Math.max(L, x0 + len);
             }
             return { len: L };
           }
           if (k < 0.75) {   // a hexagram: six yao, yang solid, yin broken
             const P = place({ text: ' ', font: 'mono', size: 0.01, anchor: [0, 0], color: PAL.line, intensity: 0 }, s, n, 0, 5);
-            const show = items[items.length - 1].show, w = 0.26 * z, th = 0.018 * z, g = 0.05 * z;
+            const show = items[items.length - 1].show, w = 0.24 * z, th = 0.011 * z, g = 0.045 * z;
             for (let j = 0; j < 6; j++) {
               const y = h + 0.03 + j * 0.055 * z, yang = r.next() < 0.5;
-              if (yang) seg(s, P.Tv, P.speed, [0, y, n], [w, y, n], th, warm, 0.7, show);
-              else { seg(s, P.Tv, P.speed, [0, y, n], [(w - g) / 2, y, n], th, warm, 0.7, show); seg(s, P.Tv, P.speed, [(w + g) / 2, y, n], [w, y, n], th, warm, 0.7, show); }
+              if (yang) seg(s, P.Tv, P.speed, [0, y, n], [w, y, n], th, warm, 0.5, show);
+              else { seg(s, P.Tv, P.speed, [0, y, n], [(w - g) / 2, y, n], th, warm, 0.5, show); seg(s, P.Tv, P.speed, [(w + g) / 2, y, n], [w, y, n], th, warm, 0.5, show); }
             }
             return { len: w + 0.1 };
           }
           const text = D.YARROW_ASK[r.int(0, D.YARROW_ASK.length - 1)], size = r.range(0.055, 0.08) * z;
           const it = { text, font: 'kai', vertical: true, size, anchor: [0.5, 0], color: warm, intensity: 0.8 };
-          place(it, s, n, h + [...text].length * size + 0.02, 5);
+          place(it, s, n, h + 0.02, 5);
           return { len: size * 1.8 };
         }
         return null;     // the source: only light (streams, the crack)
       },
     };
     // density per era (gap multiplier): older eras are sparser
-    const sparse = e => [1, 1.5, 1.8, 2.2, 2.6, 3.2, 99][e];
+    const sparse = e => [1, 1.6, 2.3, 2.6, 3.0, 3.6, 99][e];
     for (const u of heroU) walk(u, gens.hero, 0.5, 3.2, sparse);
     for (const u of fillU) walk(u, (e, s, uu) => gens.fill(e, s, uu), 0.15, 1.3, sparse);
-    // mist: a few large lines above the water (they pass near the lens as soft bars)
-    for (let i = 0; i < 160; i++) {
-      const s = r.range(60, 140), half = R.at(s).half, n = r.range(-1.6, 1.25) * half, h = 0.3 + Math.pow(r.next(), 1.5) * 2.4;
-      const it = qItem(r.range(0.18, 0.34), r.range(0.4, 0.7));
-      place(it, s, n, h, 0);
-    }
     return { items, segs };
   }
 
@@ -342,7 +342,7 @@ export default class RiverScene {
   buildMemory() {
     const r = new Rand(777), items = [], segs = [];
     const R = this.river;
-    const memS = 99.5, memN = -0.9;   // where the human's sentences float (see buildBig)
+    const memS = STANZA.s0 + STANZA.v * 10 + 1, memN = STANZA.n;   // where the human's sentences float at uTime 10
     const warmOf = (s, n) => {   // the warmth spreads from the sentences, upstream and downstream
       const d = Math.hypot((s - memS) * 0.55, (n - memN) * 1.0);
       const t0 = 8.5 + d * 0.75 + r.range(-1.5, 2.0);
@@ -366,7 +366,7 @@ export default class RiverScene {
       let s = 84 + r.next() * 2;
       while (s < 148) {
         const half = R.at(s).half, n = u * half + r.range(-0.04, 0.04) * half;
-        if (Math.abs(n - memN) < 0.55 && Math.abs(s - memS - 2) < 4.5) { s += 0.6; continue; }   // keep the sentences' lane clear
+        if (Math.abs(n - memN) < 0.75 && s > memS - 9 && s < memS + 9) { s += 0.6; continue; }   // keep the sentences' lane clear
         const h = Math.pow(r.next(), 3) * 0.18, k = r.next();
         let len = 0.5;
         if (k < 0.5) {
@@ -384,7 +384,7 @@ export default class RiverScene {
           if (r.next() < 0.5) {
             const text = D.LETTER_ZH[r.int(0, 8)], size = r.range(0.07, 0.1);
             const it = { text, font: 'kai', vertical: true, size, anchor: [0.5, 0], color: PAL.line, intensity: 0.75 };
-            put(it, s, n, h + [...text].length * size); len = size * 1.6;
+            put(it, s, n, h + 0.02); len = size * 1.6;
           } else {
             const it = { text: D.LETTER_EN[r.int(0, 6)], font: 'script', size: r.range(0.1, 0.14), anchor: [0, 0], color: PAL.line, intensity: 0.75 };
             len = this.tfM.measure(it).width * it.size; put(it, s, n, h);
@@ -392,11 +392,11 @@ export default class RiverScene {
         } else if (k < 0.9) {
           const [, poem] = D.SLIP_POEMS[r.int(0, 2)], size = r.range(0.045, 0.06);
           const it = { text: poem.join('\n'), font: 'serif', vertical: true, size, lineHeight: 1.45, anchor: [0.5, 0], color: PAL.line, intensity: 0.75 };
-          put(it, s, n, h + 7 * size); len = 4 * 1.45 * size + 0.1;
+          put(it, s, n, h + 0.03); len = 4 * 1.45 * size + 0.1;
         } else if (k < 0.95) {
           const text = D.YARROW_ASK[r.int(0, 3)], size = r.range(0.06, 0.08);
           const it = { text, font: 'kai', vertical: true, size, anchor: [0.5, 0], color: PAL.line, intensity: 0.7 };
-          put(it, s, n, h + [...text].length * size); len = size * 1.8;
+          put(it, s, n, h + 0.02); len = size * 1.8;
         } else {
           const P = put({ text: ' ', font: 'mono', size: 0.01, anchor: [0, 0], color: PAL.line, intensity: 0 }, s, n, 0);
           const nS = r.int(3, 7); let L = 0;
@@ -428,7 +428,7 @@ export default class RiverScene {
   // the warm question: from the cloud (ahead of the camera) down into the river, then with the current
   questionAt(G) {
     const R = this.river;
-    const g0 = 45.4, g1 = 49.4, sQ = 95.2, nQ = 0.6, hQ = 0.06;
+    const g0 = 45.4, g1 = 49.4, sQ = 90.0, nQ = 3.0, hQ = 0.06;
     const speed = flowSpeed(nQ, R.at(sQ).half, V_MAX);
     const riverP = g => R.world(sQ + speed * (g - g1), hQ, nQ);
     if (G >= g1) return riverP(G);
@@ -447,15 +447,14 @@ export default class RiverScene {
     this.memIdx = items.length;
     const vCam = (MEM_S(245) - MEM_S(211)) / 34;
     this.memSpeed = vCam;
-    const s0 = 99.5 - vCam * 5;          // at G = 217 (uTime 5) the stanza starts at s = 99.5
+    const s0 = STANZA.s0;                // left edge at uTime 0 (the memory camera aims at the stanza's centre)
     const hs = [0.62, 0.37, 0.12], t0 = [4.6, 5.9, 7.6];
-    D.MEMORY.forEach((m, i) => items.push({ text: m, font: 'sans', weight: 300, size: 0.165, anchor: [0, 0], path: 0, s: s0, off: [hs[i], -0.9], speed: vCam,
+    D.MEMORY.forEach((m, i) => items.push({ text: m, font: 'sans', weight: 300, size: 0.165, anchor: [0, 0], path: 0, s: s0, off: [hs[i] - 0.06, STANZA.n], speed: STANZA.v,
       color: PAL.c, intensity: 1.6, reveal: [t0[i], t0[i] + 1.3], show: [t0[i] - 0.2, 1e6, 0.4, 0] }));
     // the return line (plane, placed per frame in front of the camera)
-    this.retIdx = items.length;
-    items.push({ text: '她會好起來嗎？', font: 'sans', weight: 300, size: 0.15, pos: [0, 0, 0], ax: [1, 0, 0], ay: [0, 1, 0], anchor: [0.5, 0.5],
-      color: PAL.c, intensity: 1.7, alpha: 0 });
-    return items;
+    const line = [{ text: '她會好起來嗎？', font: 'sans', weight: 300, size: 0.15, pos: [0, 0, 0], ax: [1, 0, 0], ay: [0, 1, 0], anchor: [0.5, 0.5],
+      color: PAL.c, intensity: 1.7, alpha: 0 }];
+    return { stanza: items, line };
   }
 
   // ------------------------------------------------------------------------------------------ exhibits (one per era)
@@ -481,7 +480,7 @@ export default class RiverScene {
 
     // E1 · 1998 · e-mail (types itself like a terminal)
     {
-      const pl = this.plate(72, 8.6, 930, 395), show = [T(69.9), T(74.3), 0.6, 0.7];
+      const pl = this.plate(72, 6.2, 930, 392), show = [T(69.9), T(74.3), 0.6, 0.7];
       const sz = 0.098, adv = 0.6 * sz, x0 = -24 * adv;
       const hdr = [['From:', 'Karen Whitfield <kwhitfield@aol.com>'], ['Date:', 'Sat, 21 Mar 1998 02:14:09 -0500'], ['Subject:', "Re: Mom's biopsy results"]];
       let t = 70.45;
@@ -501,12 +500,12 @@ export default class RiverScene {
 
     // E2 · 1931 · punched tape (ITA2) and the printed strip, column for column
     {
-      const pl = this.plate(76, 8.2, 960, 400), show = [T(73.9), T(78.3), 0.6, 0.7];
+      const pl = this.plate(76, 5.7, 960, 398), show = [T(73.9), T(78.3), 0.6, 0.7];
       const cols = D.ita2Columns(D.TELEGRAM_HERO), p = 0.066, N = cols.length, x0 = -N * p / 2;
       const yc = 0.2, tp0 = 74.55, tp1 = 77.0;
       for (const row of this.tapeRows(cols, p)) {
-        add(pl, { text: row.text, font: 'mono', size: row.size, tracking: row.tracking, anchor: [0, 0.5], color: row.feed ? PAL.line : PAL.hot,
-          intensity: row.feed ? 0.5 : 0.95, show, reveal: row.feed ? undefined : [T(tp0), T(tp1)] }, x0 + (p - 0.6 * row.size) / 2 - 0.3 * row.size + 0.3 * row.size, yc + row.y);
+        add(pl, { text: row.text, font: 'mono', size: row.size, tracking: row.tracking, anchor: [0, 0], color: row.feed ? PAL.line : PAL.hot,
+          intensity: row.feed ? 0.5 : 0.95, show, reveal: row.feed ? undefined : [T(tp0), T(tp1)] }, x0 + row.dx, yc + row.y + row.dy);
       }
       for (const y of [3.44, -3.44]) poly(pl, [[x0 - 0.2, yc + y * p], [x0 + N * p + 0.25, yc + y * p]], { color: PAL.line, intensity: 0.42, width: 0.9, show });
       // printed strip
@@ -523,7 +522,7 @@ export default class RiverScene {
 
     // E3 · 1868 · a family letter on eight-column paper, written column by column; an English letter beside it
     {
-      const pl = this.plate(80, 7.6, 1010, 392), show = [T(77.9), T(82.3), 0.6, 0.7];
+      const pl = this.plate(80, 5.5, 1020, 392), show = [T(77.9), T(82.3), 0.6, 0.7];
       const cw = 0.15, ncol = 8, wS = ncol * cw, hS = 1.32, xR = wS / 2, yT = hS / 2;
       poly(pl, [[-wS / 2, -hS / 2], [wS / 2, -hS / 2], [wS / 2, hS / 2], [-wS / 2, hS / 2], [-wS / 2, -hS / 2]], { color: PAL.line, intensity: 0.32, width: 0.9, show });
       for (let i = 1; i < ncol; i++) poly(pl, [[xR - i * cw, -hS / 2 + 0.06], [xR - i * cw, hS / 2 - 0.06]], { color: PAL.line, intensity: 0.13, width: 0.7, show });
@@ -548,7 +547,7 @@ export default class RiverScene {
 
     // E4 · 1750 · the cylinder of bamboo sticks; one stick rises; the woodblock slip
     {
-      const pl = this.plate(84, 7.0, 960, 405), show = [T(81.9), T(86.25), 0.6, 0.6];
+      const pl = this.plate(84, 5.2, 960, 400), show = [T(81.9), T(86.25), 0.6, 0.6];
       const cx = -0.62, cy = -0.55, rw = 0.2, rh = 0.055, ch = 0.62;
       const ell = (y, a0, a1) => { const p = []; for (let i = 0; i <= 32; i++) { const a = lerp(a0, a1, i / 32); p.push([cx + Math.cos(a) * rw, y + Math.sin(a) * rh]); } return p; };
       poly(pl, ell(cy + ch, 0, 2 * Math.PI), { color: PAL.line, intensity: 0.5, width: 1.0, show });
@@ -575,7 +574,7 @@ export default class RiverScene {
 
     // E5 · 800 BCE · forty-nine stalks: divided, hung, counted by fours; six lines drawn: 未濟
     {
-      const pl = this.plate(88.9, 6.4, 940, 410), show = [T(86.0), T(92.6), 0.5, 0.8];
+      const pl = this.plate(88.9, 5.0, 940, 405), show = [T(86.0), T(92.6), 0.5, 0.8];
       this.yarrowPl = pl;
       add(pl, { text: D.XICI, font: 'serif', size: 0.055, tracking: 0.25, anchor: [0, 0.5], color: PAL.line, intensity: 0.55, show: [T(86.3), T(92.6), 0.6, 0.8] }, -1.05, 0.62);
       this.yarrowNotes = [];
@@ -604,12 +603,12 @@ export default class RiverScene {
   // ------------------------------------------------------------------------------------------ streams, source, convergence
   buildStreams() {
     const R = this.river, polys = [];
-    const N = 30;
+    const N = 13;
     for (let i = 0; i < N; i++) {
-      const u = -1 + 2 * i / (N - 1), bank = i === 0 || i === N - 1;
+      const u = Math.sin((-1 + 2 * (i + 0.5) / N) * Math.PI / 2 * 0.96);
       const pts = [];
       for (let s = -0.2; s <= RIVER.S; s += 0.5) { const f = R.at(Math.max(0, s)); pts.push(f.x + f.nx * u * f.half, 0.0, f.z + f.nz * u * f.half); }
-      polys.push({ points: pts, color: PAL.line, intensity: bank ? 0.16 : 0.07 + 0.03 * hash1(i), width: bank ? 0.8 : 0.65, u0: 0, u1: RIVER.S, phase: hash1(i * 3.1) * 7, flowAmt: bank ? 0.2 : 1 });
+      polys.push({ points: pts, color: PAL.line, intensity: 0.03 + 0.018 * hash1(i), width: 0.6, u0: 0, u1: RIVER.S, phase: hash1(i * 3.1) * 7, flowAmt: 1 });
     }
     this.streams = new FLines({ resolution: this.res, flow: 0.55, flowFreq: 1 / 7, flowSpeed: V_MAX / 7, flowSharp: 8, flowBase: 0.3, fade: [70, 130] });
     this.streams.setPolylines(polys);
@@ -624,8 +623,8 @@ export default class RiverScene {
     for (const ln of Cg.lines) {
       const pts = ln.pts.flatMap(P), m = ln.pts.length;
       const widths = ln.pts.map((_, i) => (ln.w0 + (ln.w1 - ln.w0) * Math.pow(ln.cum[i] / ln.L, 0.7)));
-      core.push({ points: pts, color: PAL.hot, intensity: 1.6 * ln.glow, widths: widths.map(w => 2.2 * w + 0.4) });
-      glow.push({ points: pts, color: PAL.c, intensity: 0.32 * ln.glow, widths: widths.map(w => 9 * w + 2) });
+      core.push({ points: pts, color: PAL.hot, intensity: 1.15 * ln.glow, widths: widths.map(w => 2.0 * w + 0.35) });
+      glow.push({ points: pts, color: PAL.c, intensity: 0.16 * ln.glow, widths: widths.map(w => 7 * w + 2) });
       if (m < 2) continue;
     }
     this.crackCore = new FLines({ resolution: this.res }); this.crackCore.setPolylines(core);
@@ -640,11 +639,12 @@ export default class RiverScene {
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: `uniform float uI; uniform vec3 uC, uH; varying vec2 vUv;
         void main(){ vec2 p = (vUv - 0.5) * 2.0; float r2 = dot(p, p);
-          vec3 c = uC * (0.55 * exp(-r2 * 5.0) + 0.25 * exp(-r2 * 1.6)) + uH * 0.35 * exp(-r2 * 26.0);
+          float edge = 1.0 - smoothstep(0.55, 1.0, sqrt(r2));
+          vec3 c = uC * (0.55 * exp(-r2 * 7.0) + 0.22 * exp(-r2 * 2.4) * edge) + uH * 0.35 * exp(-r2 * 40.0);
           gl_FragColor = vec4(c * uI, 1.0); }`,
     }));
     this.fire.position.set(J[0], -0.01, J[2]);
-    this.fire.scale.set(9, 1, 9);
+    this.fire.scale.set(10, 1, 10);
   }
 
   buildConverge() {
@@ -794,13 +794,13 @@ export default class RiverScene {
     const G = shot.start + t;
     const fk = Math.round(G * 24);
     let R, tau = G;
-    if (mode === 'return') { R = rig('return', G, this.river); tau = viewTime(focusRet(clamp(G, 159, 173))[0]); }
+    if (mode === 'return') { R = rig('return', G, this.river); tau = returnTau(G); }
     else if (mode === 'memory') R = rig('memory', G, this.river);
     else R = rig('upstream', clamp(G, 44, 104), this.river);
     this.setCamera(R, shot);
     const cam = this.camera;
     const all = [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh, this.tfR.mesh, this.tfM.mesh,
-      this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh, this.conv.mesh, this.tfB.mesh];
+      this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh, this.conv.mesh, this.tfB.mesh, this.tfL.mesh];
     for (const m of all) m.visible = false;
     let post;
 
@@ -815,8 +815,13 @@ export default class RiverScene {
       this.tfR.uniforms.uAperture.value = ap; this.plR.uniforms.uAperture.value = ap;
       // dim the river for the convergence (return) and as the source takes over (upstream)
       let op = 1;
-      if (mode === 'return') op = 1 - 0.88 * smoothstep(170.0, 171.3, G);
-      else op = 1 - 0.55 * smoothstep(94, 99.5, G);
+      if (mode === 'return') op = 1 - 0.95 * smoothstep(169.8, 171.2, G);
+      else {
+        let hold = 0;
+        for (const tk of [72, 76, 80, 84]) hold = Math.max(hold, envelope(G, tk - 1.9, tk + 1.7, 0.6, 0.5));
+        hold = Math.max(hold, envelope(G, 86.6, 92.0, 0.6, 0.6));
+        op = (1 - 0.42 * hold) * (1 - 0.55 * smoothstep(94, 99.5, G));
+      }
       this.tfR.uniforms.uOpacity.value = op; this.plR.uniforms.uOpacity.value = op;
       this.tfR.cull(cam, ut, mode === 'return' ? fk * 2 + 1 : fk);
       this.tfR.mesh.visible = true; this.plR.mesh.visible = true;
@@ -828,7 +833,7 @@ export default class RiverScene {
       const fireK = mode === 'return' ? 1 - smoothstep(160.6, 162.2, G) : smoothstep(88.5, 95.5, G);
       if (fireK > 0.002) {
         const breathe = 1 + 0.1 * Math.sin(G * 2 * Math.PI / 4.1) + 0.05 * Math.sin(G * 2 * Math.PI / 2.63 + 1.3);
-        this.fire.material.uniforms.uI.value = 0.55 * fireK * breathe;
+        this.fire.material.uniforms.uI.value = 0.3 * fireK * breathe;
         this.crackCore.uniforms.uOpacity.value = fireK * (0.9 + 0.1 * Math.sin(G * 2 * Math.PI / 3.3));
         this.crackGlow.uniforms.uOpacity.value = fireK * breathe;
         this.fire.visible = this.crackCore.mesh.visible = this.crackGlow.mesh.visible = true;
@@ -838,10 +843,13 @@ export default class RiverScene {
         // exhibits
         const ue = G - G_REF;
         this.tfH.uniforms.uTime.value = ue;
-        this.tfH.uniforms.uFocus.value = fd * 0.62;
         if (G > 69 && G < 93) {
+          const pls = this.ex.ex, keys = [[72, pls.mail], [76, pls.tape], [80, pls.letter], [84, pls.temple], [88.9, pls.yarrow]];
+          let best = keys[0][1], bd = 1e9; for (const [tk, pl] of keys) if (Math.abs(G - tk) < bd) { bd = Math.abs(G - tk); best = pl; }
+          const ef = Math.hypot(best.O[0] - R.x, best.O[1] - R.y, best.O[2] - R.z);
+          this.tfH.uniforms.uFocus.value = ef;
+          for (const f of [this.exLines, this.stalks, this.yao]) f.uniforms.uFocus.value = ef;
           this.exLines.setPolylines([...this.exhibitLines(ue), ...this.stickLines(G)]);
-          this.exLines.uniforms.uFocus.value = fd * 0.62;
           const st = this.stickTop;
           if (st && G > 82 && G < 86.5) this.tfH.update(this.stickLabel, { pos: this.stickRig.pl.P(st.x, st.y), intensity: 0.9 * st.rise * st.vis });
           this.stalks.setPolylines(this.stalkLines(G)); this.yao.setPolylines(this.yaoLines(G));
@@ -887,10 +895,9 @@ export default class RiverScene {
     this.conv.setPolylines(polys); this.conv.mesh.visible = polys.length > 0;
     // the line itself
     const a = smoothstep(170.85, 171.5, G);
-    this.tfB.update(this.retIdx, { pos: O, ax: [Bs.r[0], Bs.r[1], Bs.r[2]], ay: [Bs.u[0], Bs.u[1], Bs.u[2]], alpha: a, reveal: [170.85 - 160, 171.55 - 160] });
-    this.tfB.uniforms.uTime.value = G - 160;
-    this.tfB.uniforms.uFocus.value = d;
-    this.tfB.mesh.visible = true;
+    this.tfL.update(0, { pos: O, ax: [Bs.r[0], Bs.r[1], Bs.r[2]], ay: [Bs.u[0], Bs.u[1], Bs.u[2]], alpha: a, reveal: [170.85 - 160, 171.55 - 160] });
+    this.tfL.uniforms.uTime.value = G - 160;
+    this.tfL.mesh.visible = true;
   }
 
   updateMemory(G, R, fk) {
@@ -908,14 +915,25 @@ export default class RiverScene {
     // the stanza
     this.tfB.uniforms.uTime.value = ut;
     this.tfB.uniforms.uFocus.value = fd * 0.92;
-    this.tfB.update(this.retIdx, { alpha: 0 });
     this.tfB.mesh.visible = true;
     return { bloomStrength: 0.48, bloomThreshold: 0.9, streak: 0.0, halation: 0.09, vignette: 0.42, grain: 0.014, lift: [0.0018, 0.0014, 0.0010] };
   }
 
   dispose() {
-    for (const f of [this.tfR, this.tfH, this.tfW, this.tfM, this.tfB, this.plR, this.plM, this.streams, this.exLines, this.stalks, this.yao, this.crackCore, this.crackGlow, this.conv]) f?.dispose();
+    for (const f of [this.tfR, this.tfH, this.tfW, this.tfM, this.tfB, this.tfL, this.plR, this.plM, this.streams, this.exLines, this.stalks, this.yao, this.crackCore, this.crackGlow, this.conv]) f?.dispose();
   }
+}
+
+// The return replays the river backwards in time, in step with the camera, so every era is in place when the camera
+// passes it: tau = the moment the upstream journey looked at the same spot. Braking into the convergence, tau
+// eases into real time so the current flows downstream again.
+const tauMap = G => viewTime(focusRet(clamp(G, 159, 173))[0]);
+function returnTau(G) {
+  const g = 168.4;
+  if (G <= g) return tauMap(G);
+  const slope = (tauMap(g) - tauMap(g - 0.2)) / 0.2;      // < 0
+  const x = G - g, k = smoothstep(0, 1.6, x);
+  return tauMap(g) + slope * x * (1 - k) * 0.5 + x * k;
 }
 
 // when each of the six lines is brushed in (the first after three full changes)

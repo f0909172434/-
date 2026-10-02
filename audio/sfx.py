@@ -597,6 +597,9 @@ def rod_hiss(dur=2.5, seed=0):
         pulses = (np.diff(np.floor(np.cumsum(f) / SR), prepend=0) > 0).astype(float)
         cr = bp(pulses * r.uniform(0.5, 1.0, m), 250, 1200) * np.sin(np.pi * tt / 0.22)
         y[i:i + m] += cr * 0.35 * (0.6 + 0.4 * tc / dur)
+    # a breath held: the sizzle sinks in the last moment before the shell gives way
+    hold = np.clip((dur - t) / 0.12, 0, 1)
+    y *= 0.18 + 0.82 * hold ** 1.5
     y[-ns(0.01):] *= np.linspace(1, 0, ns(0.01))
     return y
 
@@ -633,7 +636,7 @@ def crack(soft=False, seed=0, twigs=(), gain=1.0):
         z = hi * (1.0 if bright else 0.45) + ring * 0.55 + body * 0.5 + sub * (0.0 if soft else 0.3)
         y[i0:] += g * z
     snap(0.0, 1.0, not soft)
-    snap(0.06, 0.42, not soft)
+    snap(0.06, 0.34, not soft)
     for k, tw in enumerate(twigs):
         i0 = ns(tw)
         if i0 >= n:
@@ -682,13 +685,13 @@ def _room(S, A, T):
     d0 = T['mind'] + 1.6
     rt = room_tone(d0, seed=1)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (0.6, 1.0), (T['mind'] - 0.6, 1.0), (d0, 0.0)])[None]
-    A.add(0.0, rt, -23.0, ROOM)
+    A.add(0.0, rt, -19.0, ROOM)
     A.add(T['car'] - 0.8, distant_car(7.5, 2.4, seed=2), -29.0, {'room': 0.1, 'hall': 0.25})
     # the answer: the same room; at 3 a.m. the fridge cycles off in the long silence
     ta, te = T['answer'], T['memory'] + 3.0
     rt = room_tone(te - ta, seed=3, fridge_off=T['fridge_off'] - ta)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (T['answer_fade'], 1.0), (T['memory'] - ta, 1.0), (te - ta, 0.0)])[None]
-    A.add(ta, rt, -23.0, ROOM)
+    A.add(ta, rt, -19.0, ROOM)
 
 
 def _keys(S, T):
@@ -724,10 +727,10 @@ def _todata(S, A, T):
         p = -0.42 + 0.84 * i / max(m - 1, 1)
         S.add(t, P(glass_ping(notes[i % 7], 0.75, seed=i, t60=0.8, click=0.5), p), -15.0, DATA)
         tm = 0.04 + 0.30 * r.beta(2.0, 2.2, 30)
-        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -20.0, DATA)
+        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -33.0, DATA)
     t0 = ticks[0] + 0.25
     rise = T['mind'] + 0.1 - t0
-    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -15.0,
+    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -24.0,
           {'space': 0.5})
 
 
@@ -772,7 +775,7 @@ def _mind(S, A, T):
         tm = tm + r.uniform(-0.006, 0.006, len(tm))
         sp = spray(c1 + cs * i - ta + 0.1, np.maximum(tm, 0), p + r.normal(0, 0.04, len(tm)), r,
                    f_range=(2600 + 250 * i, 4200 + 250 * i), decay=(0.002, 0.004), amp=(0.4, 1.0))
-        S.add(ta, sp, -17.0, DATA)
+        S.add(ta, sp, -27.0, DATA)
         # pouring: a falling trickle until the column touches the field
         tp0, tp1 = pour + cs * i, touch + cs * i
         d = tp1 - tp0
@@ -785,7 +788,7 @@ def _mind(S, A, T):
             ii = ns(tg)
             m = min(len(x), g.shape[1] - ii)
             g[:, ii:ii + m] += P(x[:m], p)
-        S.add(tp0, g, -20.0, DATA)
+        S.add(tp0, g, -27.0, DATA)
         S.add(tp1, P(touch_ripple(['E4', 'D4', 'A3', 'G3', 'C4', 'A3', 'D4'][i % 7], 0.8, seed=80 + i), p), -12.0,
               DATA)
     S.add(tail, P(touch_ripple('A2', 0.9, seed=88, big=True), 0.3), -12.0, {'hall': 0.15, 'space': 0.5})
@@ -807,7 +810,7 @@ def _river(S, A, T):
     env = [(0, 0), (1.5, 0.55), (T['river_card'] - t0, 0.85), (T['eras'][0] - 4 - t0, 1.0),
            (T['eras'][0] - t0, 0.75), (T['eras'][1] - t0, 0.25), (d, 0)]
     w = whisper_field(d, 44, seed=80, env_pts=env)
-    A.add(t0, w, -9.0, {'hall': 0.3, 'space': 0.35})
+    A.add(t0, w, -4.0, {'hall': 0.3, 'space': 0.35})
     # a soft current under the voices
     r = R(81)
     n = ns(d)
@@ -838,14 +841,14 @@ def _eras(S, A, T):
     d = e[3] - e[2] + 1.0
     q = quill(d, seed=94)
     q *= pts_env(q.shape[1], [(0, 0), (0.5, 1), (e[3] - e[2], 1), (d, 0)])[None]
-    S.add(e[2] - 0.3, q, -2.0, ERA)
+    S.add(e[2] - 0.3, q, 2.0, ERA)
     # 4. bamboo fortune sticks
     fs = fortune_sticks(e[4] - e[3] + 0.2, seed=95)
     S.add(e[3] + 0.1, fs, -3.0, ERA)
     # 5. yarrow stalks
     y = yarrow(e[5] - e[4] + 0.6, seed=96)
     y *= pts_env(y.shape[1], [(0, 1), (e[5] - e[4], 1), (e[5] - e[4] + 0.6, 0)])[None]
-    S.add(e[4], y, -1.0, ERA)
+    S.add(e[4], y, 5.0, ERA)
     # 6. the fire grows (and becomes the night fire of the bone scene)
     with A.layer('fire'):
         tf0, tf1 = e[5] - 1.0, T['lineage'] + 5.0
@@ -860,7 +863,7 @@ def _eras(S, A, T):
 def _bone(S, A, T):
     tr, tc = T['rod'], T['crack']
     with S.layer('pre'):
-        S.add(tr, P(rod_hiss(tc - tr, seed=100), 0.05), -1.0, {'room': 0.2, 'hall': 0.1})
+        S.add(tr, P(rod_hiss(tc - tr, seed=100), 0.05), 7.0, {'room': 0.2, 'hall': 0.1})
     # THE CRACK: dry, sharp, resonant; a little night air around it, then silence
     S.add(tc, P(crack(soft=False, seed=101, twigs=T['twigs']), 0.0), -12.0, {'room': 0.25, 'hall': 0.12})
 
@@ -946,7 +949,7 @@ def _answer(S, A, T):
         w = whisper_field(d, 22, seed=320, syl=(0.16, 0.38), phrase=(1.0, 3.5), gap=(0.4, 2.0), lp_hz=1900.0,
                           fric=0.25, flow=0.2, scale=(0.85, 1.1),
                           env_pts=[(0, 0), (3.0, 0.5), (T['peak'] - tm0, 1.0), (d - 3, 0.8), (d, 0.5)])
-        A.add(tm0, w, -10.0, {'hall': 0.35, 'space': 0.45})
+        A.add(tm0, w, -6.0, {'hall': 0.35, 'space': 0.45})
 
 
 def _title(S, A, T):
@@ -959,4 +962,4 @@ def _title(S, A, T):
     em = bp(r.standard_normal(n), 2500, 9000) * (t / pre) ** 2 * 0.02
     em = em * (1 - np.exp(-(pre - t) / 0.01))
     S.add(tc - pre, P(em, 0.0), -20.0, {'space': 0.3})
-    S.add(tc, P(crack(soft=True, seed=401, twigs=T['twigs']), 0.0), -24.0, {'hall': 0.25, 'space': 0.9})
+    S.add(tc, P(crack(soft=True, seed=401, twigs=T['twigs']), 0.0), -28.0, {'hall': 0.25, 'space': 0.9})

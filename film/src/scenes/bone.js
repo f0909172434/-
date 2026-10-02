@@ -90,7 +90,7 @@ void main(){
     gain *= w / max(w2, 1e-3); w = w2;
   }
   float hw = 0.5 * w + 1.0;
-  vec2 s = mix(sa, sb, t) + nrm * side * hw + dir * (t * 2.0 - 1.0) * hw * 0.5;
+  vec2 s = mix(sa, sb, t) + nrm * side * hw;
   gl_Position = vec4(s / (0.5 * uRes) * c.w, c.z, c.w);
   vCol = mix(aColA, aColB, t); vCol.a *= gain;
   vAcross = side * hw; vWpx = 0.5 * w;
@@ -119,8 +119,8 @@ void main(){
     float fill = 1.0 - smoothstep(0.35, 1.05, abs(x));
     float wall = exp(-pow((-x * vLit - 0.66) / 0.2, 2.0));   // the far wall of the cut catches the light
     float detail = smoothstep(1.4, 3.6, vWpx);
-    vec3 thin = vCol.rgb * 0.9 + uRimCol * vRim * 0.22;
-    vec3 wide = vCol.rgb * (0.3 + 0.7 * fill) + uRimCol * vRim * wall;
+    vec3 thin = vCol.rgb * 0.95 + uRimCol * vRim * 0.12;
+    vec3 wide = vCol.rgb * (0.5 + 0.5 * fill) + uRimCol * vRim * wall * 0.45;
     col = mix(thin, wide, detail);
     a = edge;
   }
@@ -241,6 +241,7 @@ uniform float uHeatR;
 uniform float uHeroBurn;
 uniform float uRim;
 uniform float uOpacity;
+uniform float uLineGain;
 varying vec2 vP;
 varying vec3 vW;
 varying float vDepth;
@@ -249,7 +250,7 @@ float aaLines(float f, float wpx){
   float d = abs(fract(f + 0.5) - 0.5) / fw;
   float line = 1.0 - smoothstep(wpx * 0.5 - 0.5, wpx * 0.5 + 0.75, d);
   float dense = smoothstep(0.2, 0.5, fw);
-  return mix(line, min(1.0, wpx * fw), dense);
+  return mix(line, 0.3 * min(1.0, wpx * fw), dense);
 }
 float heroDepth(vec2 p){ return min(hollowDepth(p, uZc, uZ.x, uZ.y, uZ.z, uUc, uU.x, uU.y), thick(p) - 0.09); }
 void main(){
@@ -292,7 +293,7 @@ void main(){
   vec3 Lv = uFirePos - vW; float dist = length(Lv); vec3 L = Lv / dist;
   float diff = max(dot(N, L), 0.0);
   float att = uFireI / (1.0 + dist * dist / 330.0);
-  vec3 lineCol = PAL_LINE * uAmb + uFireCol * diff * att;
+  vec3 lineCol = (PAL_LINE * uAmb + uFireCol * diff * att) * uLineGain;
   // heat of the rod (back) or through the thin floor (front)
   float hd = length(vP - uHeatPos);
   float heat = uHeat * exp(-hd * hd / (2.0 * uHeatR * uHeatR));
@@ -409,6 +410,23 @@ function crackPlace(C, Jx, Jy, s, mirror, rot = 0) {
   return C.lines.map(P => P.pts.map(([x, y]) => [Jx + sg * (x * cr - y * sr) * s, Jy + (x * sr + y * cr) * s]));
 }
 
+// outline of a hollow: the slot's edge outside the round hollow, and the round hollow's edge outside the slot
+function hollowRim(h) {
+  const z = h.zao, u = h.zuan, segs = [];
+  const inZuan = (x, y) => Math.hypot(x - u.c[0], y - u.c[1]) < u.R * 0.995;
+  const inZao = (x, y) => { const v = (y - z.c[1]) / z.a; if (Math.abs(v) >= 1) return false; return Math.abs(x - z.c[0]) < z.b * Math.pow(1 - v * v, 0.75) * 0.995; };
+  const push = (pts, inside) => { let cur = []; for (const p of pts) { if (inside(p[0], p[1])) { if (cur.length > 1) segs.push(cur); cur = []; } else cur.push(p); } if (cur.length > 1) segs.push(cur); };
+  for (const sg of [-1, 1]) {
+    const pts = [];
+    for (let i = 0; i <= 48; i++) { const v = -1 + 2 * i / 48; pts.push([z.c[0] + sg * z.b * Math.pow(1 - v * v, 0.75), z.c[1] + v * z.a]); }
+    push(pts, inZuan);
+  }
+  const cp = [];
+  for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2; cp.push([u.c[0] + Math.cos(a) * u.R, u.c[1] + Math.sin(a) * u.R]); }
+  push(cp, inZao);
+  return segs;
+}
+
 // ------------------------------------------------------------------------------------------------ cameras
 function lookCam(cam, pos, look) { cam.position.copy(pos); cam.up.set(0, 1, 0); cam.lookAt(look); cam.updateMatrixWorld(); }
 
@@ -418,11 +436,11 @@ const FKEYS = [
   [T_CUT - 0.1, JX + 0.32, JY - 0.30, 4.85, 0, 0],
   [T_SNAP, JX + 0.32, JY - 0.30, 4.62, 0, 0],
   [106.3, JX + 0.32, JY - 0.30, 4.58, 0, 0],
-  [112.3, 0.0, 2.62, 8.7, 0, -2.5],
-  [113.0, -0.12, 2.62, 8.6, 0, -2.5],
-  [119.3, -2.25, 2.72, 7.7, -3.5, -1.5],
-  [121.5, 0.0, -0.75, 36.0, 0, 0],
-  [125.4, 0.0, -0.75, 34.8, 0, 0],
+  [112.3, 0.0, 2.72, 8.3, 0, -2.5],
+  [113.0, -0.1, 2.72, 8.2, 0, -2.5],
+  [119.3, -2.55, 2.98, 7.0, -3.5, -1.5],
+  [121.5, 0.0, -0.9, 34.0, -3.0, 1.5],
+  [125.4, 0.0, -0.75, 32.0, 2.0, 0],
 ];
 const T_ZOOM0 = 125.4, T_ZOOM1 = 129.8;
 function frontRig(T) {
@@ -435,7 +453,7 @@ function frontRig(T) {
     // keep the junction on a straight screen path while zooming into it
     const sx = lerp(sx0, FINAL.sx, k), sy = lerp(sy0, FINAL.sy, k);
     const drift = smoothstep(T_ZOOM1, 131.5, T);
-    return { cx: JX - (sx - 960) / 804 * fh, cy: JY - (402 - sy) / 804 * fh, fh: fh * (1 - 0.006 * drift), yaw: 0, pitch: 0 };
+    return { cx: JX - (sx - 960) / 804 * fh, cy: JY - (402 - sy) / 804 * fh, fh: fh * (1 - 0.006 * drift), yaw: lerp(k0[4], 0, k), pitch: lerp(k0[5], 0, k) };
   }
   let i = 0;
   while (i < FKEYS.length - 2 && T > FKEYS[i + 1][0]) i++;
@@ -468,7 +486,7 @@ export default class Bone {
     const holeRect = new THREE.Vector4(hz.c[0] - 0.62, hz.c[1] - 0.98, hz.c[0] + 0.62 + 0.36, hz.c[1] + 0.98);
     if (HERO.side < 0) { holeRect.x -= 0.36; holeRect.z -= 0.36; }
     const surf = (back, hero) => new THREE.ShaderMaterial({
-      vertexShader: SURF_VERT, fragmentShader: SURF_FRAG,
+      vertexShader: SURF_VERT, fragmentShader: SURF_FRAG, side: THREE.DoubleSide,
       uniforms: {
         ...shared,
         tRelief: { value: back ? this.texBack : this.texFront }, tSdf: { value: this.texSdf }, uBox: { value: box },
@@ -476,17 +494,18 @@ export default class Bone {
         uZc: { value: new THREE.Vector2(...hz.c) }, uZ: { value: new THREE.Vector3(hz.a, hz.b, hz.D) },
         uUc: { value: new THREE.Vector2(...hu.c) }, uU: { value: new THREE.Vector2(hu.R, hu.D) },
         uHole: { value: holeRect },
-        uSpacing: { value: back ? 0.026 : 0.022 }, uWidth: { value: 1.0 }, uPxScale: { value: height / 804 },
+        uSpacing: { value: back ? 0.048 : 0.022 }, uWidth: { value: 1.0 }, uPxScale: { value: height / 804 },
         uFocus: { value: 10 }, uAperture: { value: 0 },
         uFirePos: { value: back ? FIRE_BACK.clone() : FIRE_FRONT.clone() }, uFireCol: { value: FIRE_COL.clone() },
-        uFireI: { value: 1 }, uAmb: { value: 0.04 }, uFill: { value: 0.006 },
+        uFireI: { value: 1 }, uAmb: { value: 0.04 }, uFill: { value: 0.003 },
         uHeatPos: { value: new THREE.Vector2(...hu.c) }, uHeat: { value: 0 }, uHeatR: { value: 0.4 }, uHeroBurn: { value: 0 },
-        uRim: { value: 0.55 }, uOpacity: { value: 1 },
+        uRim: { value: 0.55 }, uOpacity: { value: 1 }, uLineGain: { value: back ? 0.9 : 0.62 },
       },
     });
     this.matFront = surf(false, false); this.matBack = surf(true, false); this.matHero = surf(true, true);
     this.front = new THREE.Mesh(gridGeometry(B.x0, B.x1, B.y0, B.y1, 0.15), this.matFront);
-    this.back = new THREE.Mesh(gridGeometry(B.x0, B.x1, B.y0, B.y1, 0.07), this.matBack);
+    // the back is only seen around the hero hollow: a fine grid over that region only
+    this.back = new THREE.Mesh(gridGeometry(B.x0, 3.5, -2.5, 12.2, 0.05), this.matBack);
     this.heroPatch = new THREE.Mesh(gridGeometry(holeRect.x - 0.03, holeRect.z + 0.03, holeRect.y - 0.03, holeRect.w + 0.03, 0.018), this.matHero);
     for (const m of [this.front, this.back, this.heroPatch]) { m.frustumCulled = false; this.scene.add(m); }
 
@@ -509,12 +528,12 @@ export default class Bone {
       const placed = crackPlace(C, h.J[0], h.J[1], s, mirror, rot);
       placed.forEach((pts, li) => {
         const P = C.lines[li];
-        crackLines.push(faceLine(pts, { fire: ff, base: PAL.line, lit: 0.85, amb: 0.06, width: 0.016 * s / SC, step: 0.03,
+        crackLines.push(faceLine(pts, { fire: ff, base: PAL.line, lit: 1.3, amb: 0.1, width: 0.016 * s / SC, step: 0.03,
           wvar: u => crackWidth(P, u * P.L) }));
       });
       const n = NUMERALS[i % 5], ns = 0.38, side = h.side;
       for (const st of glyphStrokes(n, h.J[0] + side * 0.6 * s / SC, h.J[1] + 0.34, ns, false))
-        numerals.push(faceLine(st, { fire: ff, base: PAL.line, lit: 0.9, amb: 0.05, width: 0.034, taper: 0.06, step: 0.04 }));
+        numerals.push(faceLine(st, { fire: ff, base: PAL.line, lit: 0.6, amb: 0.03, width: 0.028, taper: 0.06, step: 0.04 }));
     });
     this.oldCracks = crackLines.length;
     fl.push(...crackLines);
@@ -523,19 +542,19 @@ export default class Bone {
 
     // ---- carvings (engraved): the question in cinnabar, older ones plain
     this.cuts = new WLines(shared, { mode: 1, minW: 1.0, rimCol: PAL.line });
-    const main = inscription(['壬午卜㱿', '貞帚好肩', '凡㞢疾'], -1.2, -1.1, 5.78, 1.1, 0.98, false);
-    const mate = inscription(['貞帚好', '弗其肩', '凡㞢疾'], 1.2, 1.1, 5.78, 1.1, 0.98, true);
-    const rainL = inscription(['貞今日', '其雨'], -1.05, -0.92, -1.42, 0.96, 0.84, false);
-    const rainR = inscription(['今日不', '其雨'], 1.05, 0.92, -1.42, 0.96, 0.84, true);
+    const main = inscription(['壬午卜㱿', '貞帚好肩', '凡㞢疾'], -1.62, -0.9, 5.62, 0.9, 0.8, false);
+    const mate = inscription(['貞帚好', '弗其肩', '凡㞢疾'], 1.62, 0.9, 5.62, 0.9, 0.8, true);
+    const rainL = inscription(['貞今日', '其雨'], -1.05, -0.8, -1.5, 0.8, 0.7, false);
+    const rainR = inscription(['今日不', '其雨'], 1.05, 0.8, -1.5, 0.8, 0.7, true);
     this.mainGlyphs = main;
     const cutLine = (st, color, lit, amb, width, rim) => faceLine(st, { fire: ff, base: color, lit, amb, width, taper: 0.1, step: 0.035, rim,
       wvar: u => 0.92 + 0.16 * Math.sin(u * 5.3 + st[0][0] * 7.1) });
     this.cutStatic = [];
-    for (const g of mate) for (const st of glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror)) this.cutStatic.push(cutLine(st, PAL.cinnabar, 1.55, 0.16, 0.064, 0.9));
-    for (const g of [...rainL, ...rainR]) for (const st of glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror)) this.cutStatic.push(cutLine(st, PAL.line, 0.42, 0.03, 0.05, 0.7));
+    for (const g of mate) for (const st of glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror)) this.cutStatic.push(cutLine(st, PAL.cinnabar, 1.25, 0.12, 0.042, 0.8));
+    for (const g of [...rainL, ...rainR]) for (const st of glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror)) this.cutStatic.push(cutLine(st, PAL.line, 0.38, 0.025, 0.036, 0.6));
     this.cutStatic.push(...numerals);
     // the main inscription is rebuilt per frame for the reading glint
-    this.mainStrokes = main.map((g, gi) => glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror).map(st => ({ gi, line: cutLine(st, PAL.cinnabar, 1.55, 0.16, 0.066, 0.9) })));
+    this.mainStrokes = main.map((g, gi) => glyphStrokes(g.ch, g.cx, g.cy, g.size, g.mirror).map(st => ({ gi, line: cutLine(st, PAL.cinnabar, 1.25, 0.12, 0.044, 0.8) })));
     this.scene.add(this.cuts.mesh);
 
     // ---- the back face: outline, sutures, the king's prognostication
@@ -543,6 +562,11 @@ export default class Bone {
     const bl = [];
     bl.push(faceLine(PL.OUTLINE, { back: true, fire: fb, base: PAL.line, lit: 1.2, amb: 0.05, width: 0.03, step: 0.08 }));
     for (const s of PL.SUTURES) bl.push(faceLine(s, { back: true, fire: fb, base: PAL.line, lit: 0.7, amb: 0.03, width: 0.014, step: 0.06 }));
+    // the rim of every hollow (the union of the slot and the round hollow), as a catalogue drawing outlines it
+    for (const h of PL.HOLLOWS) {
+      if (h.J[0] > 3.5 || h.J[1] < -2.0) continue;
+      for (const seg of hollowRim(h)) bl.push(faceLine(seg, { back: true, fire: fb, base: PAL.line, lit: 1.1, amb: 0.05, width: 0.011, step: 0.03 }));
+    }
     this.backLines.set(bl);
     this.scene.add(this.backLines.mesh);
     this.backCuts = new WLines(shared, { mode: 1, minW: 1.0, depthTest: true, rimCol: PAL.line });
@@ -578,13 +602,13 @@ export default class Bone {
         void main(){
           float s = vL.y + uHalf;                       // cm from the tip
           float ang = atan(vL.z, vL.x) / 6.2831853 * 10.0;
-          float rings = aaL(s / 0.14, 1.0 * uPxScale), longi = aaL(ang, 1.0 * uPxScale);
+          float rings = aaL(s / 0.32, 1.0 * uPxScale), longi = aaL(ang, 1.0 * uPxScale);
           vec3 Lv = uFirePos - vW; float d = length(Lv);
           float diff = max(dot(normalize(vN), Lv / d), 0.0) * uFireI / (1.0 + d * d / 330.0);
-          float e1 = exp(-s / 0.32), e2 = exp(-s / 1.7), e3 = exp(-s / 5.0);
-          vec3 glow = (PAL_HOT * 5.0 * e1 + PAL_C * 2.2 * e2 + PAL_C * 0.25 * e3) * uHeat;
-          vec3 lineC = PAL_LINE * (0.05 + 0.9 * diff) + glow;
-          vec3 col = lineC * max(rings, 0.6 * longi) + glow * 0.55;
+          float e1 = exp(-s / 0.28), e2 = exp(-s / 0.9), e3 = exp(-s / 2.6);
+          vec3 glow = (PAL_HOT * 4.0 * e1 + PAL_C * 1.6 * e2 + PAL_C * 0.12 * e3) * uHeat;
+          vec3 lineC = PAL_LINE * (0.025 + 0.55 * diff) + glow;
+          vec3 col = lineC * max(rings, 0.18 * longi) + glow * 0.45;
           gl_FragColor = vec4(col * screenDim(), 1.0);
         }`,
     });
@@ -597,7 +621,7 @@ export default class Bone {
     this.rodDir = v3(-0.50, -0.40, -0.77).normalize();           // from the tip outward (toward the back-side camera)
 
     // ---- small soft lights: rod tip glow, the snap flash, embers
-    this.glow = new SoftPoints({ count: 2, resolution: [width, height], maxSize: 260 });
+    this.glow = new SoftPoints({ count: 2, resolution: [width, height], maxSize: 90 });
     this.scene.add(this.glow.mesh);
     this.NE = 16;
     this.embers = new SoftPoints({ count: this.NE, resolution: [width, height], focus: 10, aperture: 0.7, maxSize: 60 });
@@ -635,7 +659,7 @@ export default class Bone {
     const t = T - T_SNAP;
     const lines = [], halo = [];
     if (t <= 0) { this.crack.set([]); this.halo.set([]); return; }
-    const cool = 0.5 + 0.5 * Math.exp(-t / 1.8);
+    const endGlow = 1 + 0.25 * smoothstep(128.4, 130.2, T);
     for (let li = 0; li < this.crackC.lines.length; li++) {
       const P = this.crackC.lines[li], pts = this.crackPts[li];
       const front = crackFront(P, t) * SC;
@@ -651,13 +675,13 @@ export default class Bone {
         }
         const age = t - crackReach(P, s / SC);
         const hot = Math.exp(-Math.max(age, 0) / 0.32);
-        const k = P.glow * (1.55 * cool + 0.35 * Math.exp(-t / 0.9));
-        const r = PAL.c.r * k + PAL.hot.r * 4.5 * hot * P.glow, g = PAL.c.g * k + PAL.hot.g * 4.5 * hot * P.glow, b = PAL.c.b * k + PAL.hot.b * 4.5 * hot * P.glow;
+        const k = P.glow * (1.2 + 0.8 * Math.exp(-t / 1.8) + 0.3 * Math.exp(-t / 0.9)) * endGlow;
+        const r = PAL.c.r * k + PAL.hot.r * 3.2 * hot * P.glow, g = PAL.c.g * k + PAL.hot.g * 3.2 * hot * P.glow, b = PAL.c.b * k + PAL.hot.b * 3.2 * hot * P.glow;
         p.push(x, y, zFront(x, y) + 0.002);
         c.push(r, g, b, 1);
-        const wr = crackWidth(P, s / SC) * 0.0175 * (1 + 0.7 * hot);
+        const wr = crackWidth(P, s / SC) * 0.0175 * (1 + 0.25 * hot);
         w.push(wr);
-        ch.push(r * 0.09, g * 0.09, b * 0.09, 1); wh.push(wr * 7 + 0.02);
+        ch.push(r * 0.06, g * 0.06, b * 0.06, 1); wh.push(wr * 5 + 0.012);
         if (s >= front) break;
       }
       if (p.length >= 6) {
@@ -709,7 +733,7 @@ export default class Bone {
       const tB = v3(this.contact.x - 0.55, this.contact.y + 0.62, zb);
       const tC = v3(this.contact.x - 0.25, this.contact.y + 0.32, zb);
       const look = tA.clone().lerp(tB, k1).lerp(tC, k2);
-      const dA = v3(0, 0, -1), dB = v3(0.38, -0.46, -1).normalize();
+      const dA = v3(0, 0, -1), dB = v3(0.22, -0.27, -1).normalize();
       const dir = dA.clone().lerp(dB, k1).normalize();
       lookCam(cam, look.clone().addScaledVector(dir, dist), look);
       // rod: approaches along its axis, decelerating into the hollow at 103.0, pressed in until the cut
@@ -751,21 +775,23 @@ export default class Bone {
       const u = this.matFront.uniforms;
       u.uFireI.value = br;
       const through = heatRise * (snapT < 0 ? 0.75 + 0.25 * smoothstep(-0.9, 0, snapT) : Math.exp(-snapT / 0.7));
-      const flare = snapT > 0 ? 1.4 * Math.exp(-snapT / 0.12) : 0;
-      u.uHeat.value = through * 0.9 + flare; u.uHeatR.value = 0.42 + 0.22 * smoothstep(-0.9, 0, snapT);
+      const flare = snapT > 0 ? 0.35 * Math.exp(-snapT / 0.1) : 0;
+      u.uHeat.value = Math.min(1, through * 0.8 + flare); u.uHeatR.value = 0.42 + 0.22 * smoothstep(-0.9, 0, snapT);
       u.uHeatPos.value.set(lerp(HERO.zuan.c[0], JX, 0.45), lerp(HERO.zuan.c[1], JY, 0.45));
-      this.frontLines.uniforms.uOpacity.value = br;
-      this.cuts.uniforms.uOpacity.value = br;
+      const endDim = 1 - 0.72 * smoothstep(128.4, 130.2, T);
+      u.uOpacity.value = endDim;
+      this.frontLines.uniforms.uOpacity.value = br * endDim;
+      this.cuts.uniforms.uOpacity.value = br * endDim;
       // snap flash at the junction
       const z = PL.dome(JX, JY) + 0.01;
       G.positions.set([JX, JY, z], 0);
       const f1 = snapT > 0 ? Math.exp(-snapT / 0.09) : 0, f2 = snapT > 0 ? Math.exp(-snapT / 0.7) : 0;
-      G.colors.set([PAL.hot.r * 2.2 * f1 + PAL.c.r * 0.5 * f2, PAL.hot.g * 2.2 * f1 + PAL.c.g * 0.5 * f2, PAL.hot.b * 2.2 * f1 + PAL.c.b * 0.5 * f2], 0);
-      G.sizes[0] = 120 * (dist / 10);
+      G.colors.set([PAL.hot.r * 1.3 * f1 + PAL.c.r * 0.35 * f2, PAL.hot.g * 1.3 * f1 + PAL.c.g * 0.35 * f2, PAL.hot.b * 1.3 * f1 + PAL.c.b * 0.35 * f2], 0);
+      G.sizes[0] = 26 + 30 * f1;
       G.positions.set([JX, JY, z], 3); G.colors.set([0, 0, 0], 3); G.sizes[1] = 1;
       G.update();
       if (snapT > 0) {
-        post.flash = 0.03 * Math.exp(-snapT / 0.07);
+        post.flash = 0.008 * Math.exp(-snapT / 0.05);
         post.shake = 0.3 * Math.exp(-snapT / 0.1);
       }
       this.bg.material.uniforms.uA.value = 0.012 * br; this.bg.material.uniforms.uC.value.set(0.06, 0.3);

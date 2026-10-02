@@ -414,9 +414,14 @@ def _lineage(M, T):
         u = (t - tt0) / (tc - tt0)
         bit = bits[k % len(bits)] == '1'
         M.add(t, P(blip('E5' if bit else 'A4', 0.55 + 0.2 * u, 0.05 - 0.025 * u, 'square', 2600 + 2000 * u,
-                        seed=k), 0.35 if k % 2 else -0.35), -5.0, ROOMY)
+                        seed=k), 0.35 if k % 2 else -0.35), 1.0, ROOMY)
         t += s16 / (1 + 3.0 * u)
         k += 1
+    for j in range(int(round((tc - tt0) / beat))):          # a soft pulse joins the tape
+        if j >= 2:
+            M.add(tt0 + j * beat, P(_soft_kick('A1', 0.35 + 0.08 * j), 0.0), -6.0, {'room': 0.1})
+    M.add(tt0, strings_chord(['A2', 'E3'], tc - tt0 + 0.3, 'vc', att=1.5, rel=0.4, seed=850,
+                             dyn=[(0, 0.5), (tc - tt0, 0.8)]), -15.0, BIG)
     # circuits: a precise arpeggiator, a soft pulse below, strings holding the harmony
     arps = {'A': ['A3', 'C4', 'E4', 'A4', 'C5', 'E5'], 'F': ['F3', 'A3', 'C4', 'E4', 'A4', 'C5'],
             'C': ['C4', 'E4', 'G4', 'C5', 'D5', 'E5'], 'G': ['G3', 'D4', 'G4', 'A4', 'D5', 'E5']}
@@ -508,17 +513,20 @@ def _rush(M, T):
         line(M, 'str', notes, db_, BIG, 900 + j, sec='vln', rel=0.8, att=0.08, bright=0.8)
         line(M, 'str', [(t, d, mm - 12, v) for t, d, mm, v in notes], db_ - 3, BIG, 910 + j, sec='vla', rel=0.8,
              att=0.08, bright=0.7)
-    # the swell: strings + choir, rising, unresolved (on the dominant) at the cut
+    # the swell: strings + choir, rising, moving onto the dominant (E major), unresolved at the cut
     ts0 = tb(16.0)
+    t_e = tb(28.0) if nbeats > 28.5 else tc - 1.5
     d = tc - ts0
     up = [(0, 0.35), (d - 0.3, 1.0), (d, 1.0)]
-    M.add(ts0, strings_chord(['E5', 'A5', 'C6'], d, 'vln', att=d * 0.7, rel=0.05, seed=920, dyn=up, trem=0.5,
-                             bright=0.9), -9.0, BIG)
-    M.add(ts0, choir(['A3', 'E4', 'A4', 'C5'], d, 'a', att=d * 0.7, rel=0.05, seed=921, dyn=up), -8.0, HUGE)
-    t_e = tb(28.0) if nbeats > 28.5 else tc - 1.5
+    swell = [['E5', 'E5'], ['A5', 'G#5'], ['C6', 'B5']]
+    for j, (p1, p2) in enumerate(swell):
+        M.add(ts0, strings_line([(0, t_e - ts0, m_(p1), 0.9), (t_e - ts0, tc - t_e, m_(p2), 0.9)], 'vln', rel=0.05,
+                                att=d * 0.6, glide=0.04, bright=0.9, dyn=up, seed=920 + j), -12.0, BIG)
+    M.add(ts0, choir(['A3', 'E4', 'A4', 'C5'], t_e - ts0 + 0.1, 'a', att=(t_e - ts0) * 0.8, rel=0.1, seed=921,
+                     dyn=[(0, 0.35), (t_e - ts0, 0.9)]), -8.0, HUGE)
     M.add(t_e, strings_chord(['E2', 'B2', 'E3', 'G#3'], tc - t_e, 'vc', att=0.3, rel=0.05, seed=922,
                              dyn=[(0, 0.8), (tc - t_e, 1.0)]), -6.0, BIG)
-    M.add(t_e, choir(['E3', 'B3', 'E4', 'G#4'], tc - t_e, 'a', att=0.3, rel=0.05, seed=923), -7.0, HUGE)
+    M.add(t_e, choir(['E3', 'B3', 'E4', 'G#4', 'B4'], tc - t_e, 'a', att=0.25, rel=0.05, seed=923), -7.0, HUGE)
     sh = shepard(tc - (t0 + 4.0), [(0, 0.12), (tc - t0 - 4.0, 0.45)], seed=930)
     sh *= pts_env(sh.shape[1], [(0, 0.0), (3, 0.4), (tc - t0 - 4.0, 1.0)])[None]
     M.add(t0 + 4.0, sh, -10.0, BIG)
@@ -532,16 +540,16 @@ def _answer(M, T):
     t0 = T['loves']
     b = 0.85
     for j, (p, v) in enumerate([('F2', 0.18), ('C3', 0.16), ('A3', 0.15)]):
-        pno(M, t0 + 0.04 * j, p, v, 3.3, db=8.0, seed=70 + j)
+        pno(M, t0 + 0.04 * j, p, v, 3.3, db=3.0, seed=70 + j)
     mel = motif(Q, t0 + 0.15, b, 0.27, last=5.0)
     for i, (t, d, mm, v) in enumerate(mel):
-        pno(M, t, mm, v * (0.9 if i in (3, 5) else 1.0), d, db=8.0, seed=80 + i)
+        pno(M, t, mm, v * (0.9 if i in (3, 5) else 1.0), d, db=3.0, seed=80 + i)
     tA = mel[3][0]
     for j, (p, v) in enumerate([('A2', 0.15), ('E3', 0.13)]):
-        pno(M, tA + 0.05 * j, p, v, 2.5, db=8.0, seed=90 + j)
+        pno(M, tA + 0.05 * j, p, v, 2.5, db=3.0, seed=90 + j)
     tD = mel[6][0]
     for j, (p, v) in enumerate([('D3', 0.14), ('A3', 0.12), ('F4', 0.11)]):
-        pno(M, tD + 0.06 * j, p, v, 4.5, db=8.0, seed=95 + j)
+        pno(M, tD + 0.06 * j, p, v, 4.5, db=3.0, seed=95 + j)
 
 
 # ----------------------------------------------------------------------------
@@ -559,6 +567,7 @@ def _memory(M, T):
     b0 = pk - 20 * beat                         # 212
     seq = ['A', 'F#m', 'D', 'E', 'F#m', 'D', 'E', 'A', 'A']
     bars = [(b0 + 4 * beat * k, 4 * beat) for k in range(len(seq))]
+    bars[-1] = (bars[-1][0], T['memory_end'] + 0.6 - bars[-1][0])
     lv = [0.35, 0.45, 0.55, 0.62, 0.75, 1.0, 0.85, 0.7, 0.5]
     dyn = [(0, 0.35), (8, 0.55), (12, 0.65), (16, 0.8), (20, 1.0), (24, 0.85), (28, 0.7), (33, 0.5)]
     va = {'A': ['A3', 'C#4', 'E4'], 'F#m': ['A3', 'C#4', 'E4'], 'D': ['F#3', 'A3', 'E4'], 'E': ['A3', 'B3', 'E4']}
@@ -620,14 +629,14 @@ def _title(M, T):
     big = {'hall': 0.25, 'space': 0.7}
     for j, (p, v) in enumerate([('A1', 0.5), ('E2', 0.42), ('A2', 0.38), ('C#3', 0.34), ('B3', 0.28),
                                 ('E4', 0.25)]):
-        pno(M, t1 + 0.03 * j, p, v, 9.0, db=7.0, send=big, seed=120 + j)
+        pno(M, t1 + 0.03 * j, p, v, 9.0, db=3.0, send=big, seed=120 + j)
     dyn = [(0, 0.3), (2.5, 1.0), (6.0, 0.7), (L - 6, 0.2), (L - 2.5, 0.0)]
-    M.add(t1, strings_chord(['A1'], L - 2.5, 'cb', att=2.0, rel=2.5, seed=1100, dyn=dyn, bright=0.2), -13.0, big)
+    M.add(t1, strings_chord(['A1'], L - 2.5, 'cb', att=2.0, rel=2.5, seed=1100, dyn=dyn, bright=0.2), -17.0, big)
     M.add(t1, strings_chord(['A2', 'E3'], L - 2.5, 'vc', att=2.0, rel=2.5, seed=1101, dyn=dyn, bright=0.25),
-          -15.0, big)
+          -19.0, big)
     M.add(t1 + 0.3, strings_chord(['C#4', 'E4'], L - 3.0, 'vla', att=2.5, rel=2.5, seed=1102, dyn=dyn,
-                                  bright=0.2), -19.0, big)
-    M.add(t1 + 0.5, choir(['A2', 'E3', 'C#4'], L - 4.0, 'u', att=2.5, rel=3.0, seed=1103, dyn=dyn), -18.0, big)
+                                  bright=0.2), -23.0, big)
+    M.add(t1 + 0.5, choir(['A2', 'E3', 'C#4'], L - 4.0, 'u', att=2.5, rel=3.0, seed=1103, dyn=dyn), -22.0, big)
     # credits: the question, once more, very far away, left unfinished
     tcr = T['credits'] + 0.8
     for i, p in enumerate(['E6', 'D6', 'A5']):

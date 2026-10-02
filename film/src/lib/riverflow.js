@@ -16,7 +16,7 @@ export const RIVER = {
 // heading (radians) along the river: long gentle meanders, straight at the source
 function heading(s) {
   const k = smoothstep(4, 30, s);
-  return k * (0.36 * Math.sin(2 * Math.PI * (s - 30) / 118) + 0.10 * Math.sin(2 * Math.PI * (s + 11) / 41)) - 0.05;
+  return k * (0.52 * Math.sin(2 * Math.PI * (s + 10) / 160) + 0.07 * Math.sin(2 * Math.PI * (s + 11) / 41)) - 0.05;
 }
 
 export class River {

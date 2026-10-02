@@ -29,7 +29,10 @@ export const ERA_MID = [72, 76, 80, 84, 89, 96];           // the exhibit of eac
 // exhibit and pushes through the boundaries, where the music changes texture)
 const SURGE = [[70, 13.0, 0.62], [74, 13.1, 0.62], [78, 13.1, 0.62], [82, 13.1, 0.62], [86, 12.6, 0.62], [92, 7.0, 0.8]];
 function speed(G) {
-  let v = G < 66 ? 0.76 : G < 70 ? lerp(0.76, 0.5, smoothstep(66, 70, G)) : lerp(0.5, 0.3, smoothstep(86, 94, G));
+  // base: a slow glide in the present, lingering at each exhibit, almost still for the yarrow ritual
+  let v = G < 66 ? 0.76 : G < 70 ? lerp(0.76, 0.5, smoothstep(66, 70, G)) : 0.5;
+  v = lerp(v, 0.1, smoothstep(86.3, 87.2, G) * (1 - smoothstep(91.2, 92.2, G)));
+  if (G > 92) v = lerp(v, 0.3, smoothstep(92, 94, G));
   for (const [t, area, sig] of SURGE) v += area / (sig * Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * ((G - t) / sig) ** 2);
   return v;
 }
@@ -52,10 +55,11 @@ export function scUp(G) {
 // ------------------------------------------------------------------------------------------ keys per mode
 // present + upstream share one continuous move (45 -> 100); G is global film time.
 const UP = {
-  n: [[44, 3.0], [47, 6.0], [50, 9.0], [56.4, 8.6], [64, 6.6], [70, 5.2], [78, 3.6], [86, 2.4], [92, 1.6]],    // metres outside the near bank
-  h: [[44, 9.0], [46.5, 6.2], [49, 3.2], [52, 2.4], [56.4, 2.1], [63, 1.45], [70, 1.25], [80, 1.05], [88, 0.9], [92, 0.85]],
-  psi: [[44, 22], [47, 30], [50, 44], [56.4, 47], [64, 42], [70, 36], [80, 33], [92, 30]],
-  phi: [[44, -30], [46.5, -22], [49, -11], [52, -8.0], [56.4, -7.0], [64, -5.6], [70, -5.0], [80, -5.4], [92, -6.5]],
+  a: [[44, 1.0], [56.4, 1.0], [64, 0.78], [70, 0.56], [92, 0.5]],                                            // lateral: a * half + b
+  b: [[44, 2.0], [47, 3.6], [50, 4.4], [56.4, 4.2], [64, 1.4], [70, 0.35], [80, 0.2], [92, 0.3]],
+  h: [[44, 9.0], [46.5, 6.2], [49, 3.0], [52, 2.4], [56.4, 2.15], [63, 1.75], [70, 1.55], [80, 1.4], [88, 1.2], [92, 1.1]],
+  psi: [[44, 22], [47, 30], [50, 44], [56.4, 46], [64, 42], [70, 38], [80, 35], [92, 32]],
+  phi: [[44, -30], [46.5, -22], [49, -12.5], [52, -10.5], [56.4, -10], [64, -9], [70, -8.4], [80, -8.2], [92, -8.6]],
   fov: [[44, 30], [50, 25], [56.4, 24], [70, 25], [92, 27]],
 };
 
@@ -66,7 +70,7 @@ export function rigUp(G, river) {
   const sc = scUp(G);
   const f = river.at(sc);
   const half = f.half;
-  const nc = half + track(UP.n, G), h = track(UP.h, G);
+  const nc = half * track(UP.a, G) + track(UP.b, G), h = track(UP.h, G);
   let psi = track(UP.psi, G), phi = track(UP.phi, G), fov = track(UP.fov, G);
   let x = f.x + f.nx * nc, y = h, z = f.z + f.nz * nc;
   // heading of the view (horizontal): psi from -T toward -N
@@ -102,18 +106,21 @@ const RET = {
   n: [[159, 2.2], [164, 3.0], [168, 3.6], [171, 4.4], [173, 4.4]],
   h: [[159, 0.9], [164, 1.1], [168, 1.4], [171, 1.7], [173, 1.7]],
   psi: [[159, 104], [166, 100], [169.5, 96], [171, 90], [173, 90]],
-  phi: [[159, -3.5], [168, -4.5], [171, -6.5], [173, -6.5]],
+  phi: [[159, -3.5], [168, -4.5], [169.8, -4.0], [171.2, 1.8], [173, 2.2]],
   fov: [[159, 27], [168, 26], [171.5, 24], [173, 24]],
 };
 // memory: the warm river; the camera drifts downstream with the human's sentences, rises at the peak
 const MEM = {
   s: [[211, 96], [245, 112.2]],
-  n: [[211, 4.6], [222, 3.8], [232, 4.2], [246, 4.8]],
-  h: [[211, 1.6], [222, 1.35], [228, 1.9], [235, 3.4], [246, 4.2]],
-  psi: [[211, 112], [222, 106], [232, 98], [246, 94]],
-  phi: [[211, -5.5], [222, -5.0], [230, -7.0], [236, -11.5], [246, -13]],
+  a: [[211, 0.72], [226, 0.7], [236, 1.0], [246, 1.05]],          // lateral: a * half + b
+  b: [[211, 0.4], [226, 0.5], [236, 2.4], [246, 2.8]],
+  h: [[211, 1.5], [222, 1.4], [228, 1.85], [236, 3.2], [246, 3.6]],
+  back: [[211, -2.6], [246, -3.2]],                                 // camera s relative to the stanza centre
+  lift: [[211, 0.05], [226, 0.05], [236, -0.55], [246, -0.62]],      // aim above (+) / below (-) the stanza
   fov: [[211, 25], [246, 26]],
 };
+// the human's sentences: a stanza standing in the river, flowing with the camera
+export const STANZA = { s0: 98.6, v: (112.2 - 96) / 34, n: -1.1, h: 0.37, w: 1.98, g0: 212 };
 
 function rigKeys(K, G, river) {
   const sc = track(K.s, G), f = river.at(sc), nc = f.half + track(K.n, G), h = track(K.h, G);
@@ -125,7 +132,14 @@ function rigKeys(K, G, river) {
   };
 }
 export const rigReturn = (G, river) => rigKeys(RET, G, river);
-export const rigMemory = (G, river) => rigKeys(MEM, G, river);
+export function rigMemory(G, river) {
+  const st = STANZA, sS = st.s0 + st.v * (G - st.g0) + st.w / 2;
+  const sc = sS + track(MEM.back, G), f = river.at(sc), nc = f.half * track(MEM.a, G) + track(MEM.b, G), h = track(MEM.h, G);
+  const x = f.x + f.nx * nc, y = h, z = f.z + f.nz * nc;
+  const T = river.at(sS), tx = T.x + T.nx * st.n, tz = T.z + T.nz * st.n, ty = st.h + track(MEM.lift, G);
+  const dx = tx - x, dy = ty - y, dz = tz - z, dh = Math.hypot(dx, dz);
+  return { x, y, z, hx: dx / dh, hz: dz / dh, phi: Math.atan2(dy, dh) * 180 / Math.PI, fov: track(MEM.fov, G), sc, nc, h };
+}
 export const RET_S = G => track(RET.s, G);
 export const MEM_S = G => track(MEM.s, G);
 

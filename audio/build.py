@@ -283,7 +283,7 @@ def qc_plan(T):
         checks.append((f'key {e["ch"]} ({e["msg"]})', e['t'], (1000, 8000), 'sfx', W))
     checks.append(('CRACK 卜', T['crack'], (1500, 12000), 'sfx', (-0.1, 0.1)))
     checks.append(('CRACK 卜 (master)', T['crack'], (1500, 12000), 'master', (-0.1, 0.1)))
-    checks.append(('Fuxi bloom', T['fuxi'], (25, 400), 'music', (-0.15, 0.15)))
+    checks.append(('Fuxi bloom', T['fuxi'], (150, 3000), 'music', (-0.15, 0.15)))
     for j, t in enumerate(T['lifts']):
         checks.append((f'lift chime {j + 1}', t, (1000, 6000), 'sfx', (-0.06, 0.06)))
     checks.append(('title crack', T['title_crack'], (1000, 8000), 'sfx', (-0.1, 0.1)))
@@ -336,7 +336,8 @@ def main():
         ('*', 'pre'): [(0, 1), (tc - 0.002, 1), (tc + 0.012, 0)],
         ('*', 'rush'): [(0, 1), (ta - 0.03, 1), (ta, 0)],
         ('*', 'mem'): mem_gate,
-        ('ambience', 'fire'): [(0, 1), (tc - 0.002, 1), (tc + 0.06, 0.05), (tc + 2.2, 0.05), (tc + 6.0, 0.6),
+        ('ambience', 'fire'): [(0, 1), (T['rod'], 1), (T['rod'] + 0.5, 0.6), (tc - 0.002, 0.6), (tc + 0.06, 0.05),
+                               (tc + 2.2, 0.05), (tc + 6.0, 0.6),
                                (T['lineage'] + 6.0, 0.6)],
     }
     stems = {}
@@ -344,7 +345,7 @@ def main():
         st = B.render(irs, wet, gates)
         st = hp(dc_block(st.astype(np.float64)), 24.0, order=4)
         if B.name == 'music':
-            st = eq(st, [('highshelf', 6500.0, 2.5, 0.7)])
+            st = eq(st, [('lowshelf', 100.0, -1.5, 0.7), ('highshelf', 7000.0, 4.0, 0.7)])
         stems[B.name] = st
         if B.truncated:
             log(f'  warning: truncated events on {B.name}: {B.truncated[:8]}')

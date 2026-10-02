@@ -21,19 +21,19 @@ export const BBOX = { x0: -8.8, x1: 8.8, y0: -13.5, y1: 13.4 };
 
 export function dome(x, y) {
   const b = Math.max(0, Math.abs(x) - 6.2), x2 = x * x;
-  return 0.42 - 0.0042 * x2 - 0.0016 * y * y - 0.000035 * x2 * x2 - 0.055 * b * b;
+  return 0.42 - 0.0042 * x2 - 0.0016 * y * y - 0.000035 * x2 * x2 - 0.03 * b * b;
 }
 export function domeGrad(x, y) {
   const b = Math.max(0, Math.abs(x) - 6.2);
-  return [-0.0084 * x - 0.00014 * x * x * x - 0.11 * b * Math.sign(x), -0.0032 * y];
+  return [-0.0084 * x - 0.00014 * x * x * x - 0.06 * b * Math.sign(x), -0.0032 * y];
 }
 export function thickness(x, y) { return 0.62 * (1 - 0.33 * (x * x / 72 + y * y / 175)); }
 
 export const DOME_GLSL = /* glsl */`
 float dome(vec2 p){ float b = max(0.0, abs(p.x) - 6.2); float x2 = p.x * p.x;
-  return 0.42 - 0.0042 * x2 - 0.0016 * p.y * p.y - 0.000035 * x2 * x2 - 0.055 * b * b; }
+  return 0.42 - 0.0042 * x2 - 0.0016 * p.y * p.y - 0.000035 * x2 * x2 - 0.03 * b * b; }
 vec2 domeGrad(vec2 p){ float b = max(0.0, abs(p.x) - 6.2);
-  return vec2(-0.0084 * p.x - 0.00014 * p.x * p.x * p.x - 0.11 * b * sign(p.x), -0.0032 * p.y); }
+  return vec2(-0.0084 * p.x - 0.00014 * p.x * p.x * p.x - 0.06 * b * sign(p.x), -0.0032 * p.y); }
 float thick(vec2 p){ return 0.62 * (1.0 - 0.33 * (p.x * p.x / 72.0 + p.y * p.y / 175.0)); }
 vec2 thickGrad(vec2 p){ return -0.62 * 0.33 * vec2(2.0 * p.x / 72.0, 2.0 * p.y / 175.0); }
 `;
@@ -136,7 +136,7 @@ export const SUTURES = SUT_BASE.map((b, i) => serrate(b, 11.3 + i * 5.7, i === 3
 const SUL_RIGHT = [
   [[0, 10.75], [1.6, 11.45], [3.22, 12.42]],                               // gular | humeral
   [[0, 7.55], [1.8, 7.78], [3.8, 7.36], [5.82, 7.15]],                     // humeral | pectoral
-  [[0, 3.15], [2.5, 3.36], [4.6, 4.05], [6.12, 5.62]],                     // pectoral | abdominal
+  [[0, 3.15], [2.5, 3.40], [4.3, 4.30], [5.45, 5.05], [6.12, 5.62]],       // pectoral | abdominal
   [[0, -4.25], [2.6, -4.08], [4.6, -4.24], [6.25, -4.52]],                 // abdominal | femoral
   [[0, -9.05], [1.6, -9.38], [3.4, -10.02], [4.55, -10.75]],               // femoral | anal
   [[6.12, 5.62], [6.72, 3.0], [6.80, 0.0], [6.70, -2.6], [6.25, -4.52]],   // plastral | marginal (on the bridge)
@@ -170,7 +170,7 @@ const L_HOLLOWS = [
   [-2.55, 11.25], [-4.15, 10.45],                                    // 首甲
   [-0.95, 8.95],                                                     // 中甲
   [-1.75, 6.30], [-3.45, 6.30], [-5.00, 6.30],                       // 前甲
-  [-1.75, 4.10], [-3.45, 4.10], [-5.00, 4.10], [-7.10, 4.00],
+  [-1.75, 4.10], [-3.45, 4.10], [-5.00, 3.85], [-7.10, 4.00],
   [-1.75, 1.90], [-3.45, 1.90], [-5.00, 1.90], [-7.10, 1.80],
   [-1.75, -1.00], [-3.45, -1.00], [-5.00, -1.00], [-7.10, -0.80],    // 後甲
   [-1.75, -3.00], [-3.45, -3.00], [-5.00, -3.00], [-7.05, -2.75],
@@ -183,7 +183,7 @@ const CLEAR = new Set(['-1.75,6.3', '-3.45,6.3', '-1.75,4.1', '-3.45,4.1', '-1.7
 export const HOLLOWS = [];
 for (const [x, y] of L_HOLLOWS) {
   const key = `${x},${y}`;
-  const hero = key === '-5,4.1';
+  const hero = key === '-5,3.85';
   HOLLOWS.push(hollow(x, y, { used: !CLEAR.has(key) && !hero, hero }));
   HOLLOWS.push(hollow(-x, y, { used: !CLEAR.has(key), mate: hero }));
 }
@@ -195,10 +195,10 @@ export function hollowDepth(h, x, y) {
   const z = h.zao, v = (y - z.c[1]) / z.a;
   if (v > -1 && v < 1) {
     const w = z.b * Math.pow(1 - v * v, 0.75), q = Math.abs(x - z.c[0]) / Math.max(w, 1e-4);
-    if (q < 1) d = z.D * Math.pow(1 - q * q, 0.55) * Math.pow(1 - v * v * v * v, 0.35);
+    if (q < 1) d = z.D * Math.pow(1 - q * q, 0.95) * Math.pow(1 - v * v * v * v, 0.45);
   }
   const u = h.zuan, r = Math.hypot(x - u.c[0], y - u.c[1]) / u.R;
-  if (r < 1) d = Math.max(d, u.D * Math.pow(1 - r * r, 0.5));
+  if (r < 1) d = Math.max(d, u.D * Math.pow(1 - r * r, 0.9));
   return d;
 }
 export const HOLLOW_GLSL = /* glsl */`
@@ -208,10 +208,10 @@ float hollowDepth(vec2 p, vec2 zc, float za, float zb, float zD, vec2 uc, float 
   if (abs(v) < 1.0) {
     float w = zb * pow(1.0 - v * v, 0.75);
     float q = abs(p.x - zc.x) / max(w, 1e-4);
-    if (q < 1.0) d = zD * pow(1.0 - q * q, 0.55) * pow(1.0 - v * v * v * v, 0.35);
+    if (q < 1.0) d = zD * pow(1.0 - q * q, 0.95) * pow(1.0 - v * v * v * v, 0.45);
   }
   float r = length(p - uc) / uR;
-  if (r < 1.0) d = max(d, uD * sqrt(1.0 - r * r));
+  if (r < 1.0) d = max(d, uD * pow(1.0 - r * r, 0.9));
   return d;
 }`;
 
