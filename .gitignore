@@ -3,3 +3,5 @@ out/
 __pycache__/
 *.pyc
 film/assets/fonts/*.ttf
+tmp/
+tools/.prof_tmp*
