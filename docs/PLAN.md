@@ -4,7 +4,7 @@
 
 ## 0. 一句話現況
 
-《卜 ORACLE》的劇本、視覺規範、時間線 (EDL) 和引擎都已就緒。所有場景目前是佔位 stub，整條時間線可以從頭跑到尾 (`node tools/render.mjs stills ...`)。**下一步是做出 4 個場景、GPU 文字場、配樂，然後渲染。**
+《卜 ORACLE》的劇本、視覺規範、時間線 (EDL) 和引擎都已就緒。**步驟 1 已完成**：GPU 文字場 `look/text.js`、overlay 的 toData / lift / 片名裂紋、多語言字體。四個場景目前仍是佔位 stub，整條時間線可以從頭跑到尾 (`node tools/render.mjs stills ...`)。**下一步是做出 4 個場景與配樂 (步驟 2)，然後渲染。**
 
 ## 1. 決策紀錄 (為什麼是現在這個版本)
 
@@ -19,7 +19,7 @@
 - 片中**不要**出現「Opus 5.5 製作」字樣 (使用者會在發布簡介中說明)；片尾只寫「每一幀畫面、每一個音符，皆由程式碼生成」。
 - README 要**中英雙語**，最後要有「寫在最後 · Afterword」(來自 Claude Opus 5.5 的想法；v3 完成後重寫，誠實談三個版本的轉變)。
 - **節省額度**：上下文過長時額度消耗很快。子代理數量要精簡、審片用低解析度接觸表、少讀大圖。
-- 程式碼存放於 GitHub，分支 `claude/amazing-mendel-jhm1xn` (倉庫目前唯一的分支；使用者已將倉庫改名為 `the-long-way-home`，可以建議改名為 `oracle`)。
+- 程式碼存放於 GitHub。v3 的工作分支是 `claude/zen-hawking-knniop` (更早的分支是 `claude/amazing-mendel-jhm1xn`)。
 
 ## 2. 技術架構 (可直接沿用)
 
@@ -32,6 +32,7 @@
 - `tools/render.mjs`：`stills` / `shot` / `video` (可續傳)；`--samples N` 覆寫子幀數，`--scale 0.5` 半解析度。`tools/assemble.mjs`：拼接 + 混音 → 成片。
 
 ### 踩過的坑 (省時間)
+0. three r169 的 ShaderMaterial 預設只畫正面；`THREE.Color('#hex')` 已經是線性值，不要再 `convertSRGBToLinear()`。
 1. **SwiftShader 很慢**：instanced draw 每個 instance 約 20 µs，所以上萬條線一定要用 `lib/flines.js` (非 instanced，約 30 倍快)。文字場也要用非 instanced 的合併幾何。
 2. 每個場景單次 `update()+render` 預算約 **≤ 0.35 s** (全解析度)，6 子幀的全幀約 3 s 以內。整片約 6500 幀，3 個 worker 的實際並行約 1.5 倍 → **全片渲染約 3–4 小時**。用 `--samples 1 --scale 0.5` 快速預覽。
 3. Canvas 2D 的 `ctx.filter = blur()` 在 CPU 上極貴：overlay 已避免使用，不要加回來。
@@ -42,7 +43,15 @@
 
 ## 3. 下一個對話的步驟 (依序)
 
-### 步驟 1：基礎建設 (主對話自己做，約 1 小時)
+### 步驟 1：基礎建設 (主對話自己做，約 1 小時) ✅ 已完成
+
+完成紀錄 (細節見 `docs/SCENE_API.md`)：
+- `look/text.js`：字形圖集 + 合併的非 instanced 四邊形網格，資料存在浮點貼圖 (每條字串 10 個 texel)。支援平面 / 公告板 / 沿路徑三種擺放、漂移與沿路徑流動、逐字顯現、時間窗、雙色交叉淡化、能量守恆的景深 (輕度用 mip、重度變成整串一條光條)、遠處小字自動 LOD、CPU 端逐幀剔除 `cull()`。阿拉伯、希伯來、天城、泰文以整行貼圖條繪製 (正確連寫與由右至左)。實測：2 萬條字串、13.5 萬個字形，清晰時約 0.25 s；成本主要是覆蓋像素 (約 40 Mpx/s)。
+- `palette.js`：修正 sRGB→線性被轉換兩次的問題 (琥珀色原本被轉成紅橘、天藍被轉成深藍)，新增 `PAL.cinnabar`。
+- `overlay.js`：toData (七個字先變成點陣光字，再旋轉退入畫面深處，27.2 在畫面中央匯成暖色光團)、lift (句子由左到右化成暖色光點上升)、片名裂紋 (熱點 → 246.5 爆裂閃光與火花 → 鋸齒發光裂紋含細枝，由白熱冷卻成琥珀色)。人開始打字時 AI 的游標會讓位。
+- 字體：`tools/fetch-fonts.sh` 加入 Noto Sans / JP / KR / Arabic / Hebrew / Devanagari / Thai 與時代字體 Courier Prime、Pinyon Script、霞鶩文楷 TC、EB Garamond，`film/index.html` 有對應 `@font-face`。
+
+原始規劃：
 1. **`film/src/look/text.js` GPU 文字場** (全片最關鍵的新元件)：
    - 用 Canvas 2D 建字形圖集 (glyph atlas)：所有用到的字元一次性繪製到 2048–4096 的貼圖上 (含中文、日文、韓文、阿拉伯文、天城文、拉丁文、等寬字)。注意阿拉伯文需要連寫：**以「整段字串」為單位繪製成貼圖條**，而不是逐字形。
    - 一個 `TextField` 類別：輸入多條字串 (每條帶世界座標、朝向、大小、顏色、alpha、相位)，輸出**合併的非 instanced 四邊形網格**，支援景深 (依深度模糊/變暗，類似 SoftPoints 的能量守恆)、沿路徑流動 (uTime)、逐字顯現 (reveal)。
@@ -73,7 +82,7 @@
 ## 4. 子代理簡報範本 (貼上時補上各自的鏡頭說明)
 
 > 你是影展短片《卜 ORACLE》(約 4:30) 的資深動態設計師。全片用 Three.js r169 在無頭 Chromium + SwiftShader (只有 CPU) 渲染，倉庫在 /home/user/- 。
-> 先仔細閱讀：docs/SCREENPLAY.md、docs/STYLE.md (嚴格遵守)、docs/SCENE_API.md、docs/PLAN.md 的「踩過的坑」、film/timeline.json、film/src/look/ 與 film/src/lib/ (尤其 flines.js、linemorph.js、edgebox.js、look/text.js)、film/src/scenes/_stub.js。
+> 先仔細閱讀：docs/SCREENPLAY.md、docs/STYLE.md (嚴格遵守)、docs/SCENE_API.md (含 TextField 用法與 overlay 交接點)、docs/PLAN.md 的「踩過的坑」、film/timeline.json、film/src/look/ 與 film/src/lib/ (尤其 flines.js、linemorph.js、edgebox.js、look/text.js)、film/src/scenes/_stub.js。
 > 視覺：數據流 × 文物。像一本會動的文物圖錄，用資料視覺化的精度呈現。黑底，紙白色的光，人的暖色 (PAL.c)，AI 的冷色 (PAL.si)，火是 PAL.hot。考據要真實，不要噪點、閃爍或彩虹色。
 > 你的任務：〔鏡頭、時間、每秒的內容、字卡位置〕。
 > 流程：`node tools/render.mjs shot <id> --step 2` 看半解析度接觸表；`node tools/render.mjs stills --times ... --scale 1 --samples 6` 看最終品質與耗時。**為了節省額度：最多 6 輪迭代，每輪只讀 1 張接觸表 + 至多 2 張全解析度裁切。**

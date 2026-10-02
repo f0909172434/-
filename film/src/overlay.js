@@ -1,6 +1,6 @@
 // 2D overlay: chat interface, trace reticles + distance line, minimal HUD, split seam, cards, title.
 // Everything is a pure function of global time T, drawn in a 1920x804 design space.
-import { clamp, lerp, smoothstep, envelope, easeOutBack, easeOutCubic, easeInOutCubic } from './lib/ease.js';
+import { clamp, lerp, smoothstep, envelope, easeOutBack, easeOutCubic, easeInOutCubic, easeInCubic } from './lib/ease.js';
 import { hash1 } from './lib/random.js';
 import { CSS } from './look/palette.js';
 
@@ -62,6 +62,8 @@ export class Overlay {
     if (shot.split) this.drawSeam(T, shot);
     this.drawHUD(T);
     this.drawChat(T);
+    this.drawToData(T);
+    this.drawLift(T);
     this.drawTrace(T, info.targets || {});
     for (const c of this.tl.cards || []) if (T >= c.start - 0.01 && T <= c.end + 0.01) this.drawCard(c, T);
     return this.canvas;
@@ -130,7 +132,7 @@ export class Overlay {
 
   // ---------------------------------------------------------------- chat
   msgState(m, T) {
-    let text = '', caret = null, sentAt = null, lastKey = -1, typeStart = null;
+    let text = '', caret = null, sentAt = null, lastKey = -1, typeStart = null, liftAt = null, liftText = null;
     for (const op of m.ops) {
       const [kind, t0] = op;
       if (kind === 'caret') { if (T >= t0) caret = t0; }
@@ -146,8 +148,9 @@ export class Overlay {
         for (let i = 0; i < op[2]; i++) { const ti = t0 + i * op[3]; if (T >= ti) { text = [...text].slice(0, -1).join(''); lastKey = ti; } }
       } else if (kind === 'send') { if (T >= t0) sentAt = t0; }
       else if (kind === 'sent') { if (T >= t0) { text = op[2]; sentAt = -1e9; } }
+      else if (kind === 'lift') { if (T >= t0) { liftAt = t0; liftText = text; text = ''; } }   // the line leaves the input box
     }
-    return { text, caret, sentAt, lastKey, typeStart };
+    return { text, caret, sentAt, lastKey, typeStart, liftAt, liftText };
   }
 
   drawChat(T) {
@@ -159,7 +162,8 @@ export class Overlay {
       if (T < s0 - 0.01 || T > s1 + 0.01) continue;
       const vis = envelope(T, s0, s1, 0.35, 0.25);
       const st = this.msgState(m, T);
-      const later = msgs.some(o => o !== m && o.role === m.role && startOf(o) > startOf(m) && T >= startOf(o));
+      // a newer message of the same role takes the caret; the AI's caret also yields once the human starts again
+      const later = msgs.some(o => o !== m && (o.role === m.role || m.role === 'ai') && startOf(o) > startOf(m) && T >= startOf(o));
       const human = m.role === 'human';
       const font = human ? SANS(300, 34) : SERIF(300, 32);
       const col = human ? CSS.humanText : CSS.aiText;
@@ -189,23 +193,24 @@ export class Overlay {
       const tw = this.width(txt, font, 4);
       const x0 = BW / 2 - tw / 2;
       const shownTxt = pr != null ? [...txt].slice(0, -1).join('') : txt;
-      if (shownTxt && alpha > 0.002) this.text(shownTxt, x0, y, font, rgba(col, alpha), { ls: 4 });
+      const dataK = m.toData ? smoothstep(m.toData[0], m.toData[0] + 0.5, T) : 0;   // drawToData takes the glyphs over
+      if (shownTxt && alpha > 0.002 && !(m.toData && T >= m.toData[0])) this.text(shownTxt, x0, y, font, rgba(col, alpha), { ls: 4 });
       // caret
-      if (st.caret != null && st.sentAt == null && !later && !pr) {
+      if (st.caret != null && st.sentAt == null && st.liftAt == null && !later && !pr) {
         const typing = T - st.lastKey < 0.45;
         const blink = typing || ((T - st.caret) % 1.06) < 0.53;
         if (blink) { this.g.fillStyle = rgba(caretCol, 0.95 * vis); this.g.fillRect(BW / 2 + tw / 2 + 6, y - 30, 2, 38); }
       }
-      // english line (crossfades on change)
-      if (m.en && m.en.length) {
+      // english line (crossfades on change); drawLift carries it away after a lift
+      if (m.en && m.en.length && st.liftAt == null) {
         let cur = null, prev = null;
         for (const e of m.en) if (T >= e[0]) { prev = cur; cur = e; }
         if (cur) {
           const reveal = cur[2] != null;                       // typed along with the Chinese
           const k = reveal ? 1 : clamp((T - cur[0]) / 0.3);
-          const enY = y + 40;
-          if (prev && prev[1] && k < 1) this.enLine(prev[1], enY, rgba(col, 0.62 * alpha * (1 - k)), 1);
-          if (cur[1]) this.enLine(cur[1], enY, rgba(col, 0.62 * alpha * k), reveal ? clamp((T - cur[0]) / Math.max(cur[2] - cur[0], 1e-3)) : 1);
+          const enY = y + 40, ea = alpha * (1 - dataK);
+          if (prev && prev[1] && k < 1) this.enLine(prev[1], enY, rgba(col, 0.62 * ea * (1 - k)), 1);
+          if (cur[1] && ea > 0.002) this.enLine(cur[1], enY, rgba(col, 0.62 * ea * k), reveal ? clamp((T - cur[0]) / Math.max(cur[2] - cur[0], 1e-3)) : 1);
         }
       }
       if (pr != null && pr < 1) {
@@ -218,6 +223,165 @@ export class Overlay {
         this.g.beginPath(); this.g.arc(cx, cy, r, 0, Math.PI * 2); this.g.stroke();
         if (last !== '。') { /* nothing */ }
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- particles from glyphs
+  // Points covering each character of `str` (drawn in `font` with letter spacing `ls`), sampled every `step`
+  // design px. Per character: { ch, x (pen offset), pts: [[dx, dy], ...] relative to the pen on the baseline }.
+  glyphPoints(str, font, ls, step = 1.6) {
+    this._gp = this._gp || new Map();
+    const key = `${font}|${ls}|${step}|${str}`;
+    if (this._gp.has(key)) return this._gp.get(key);
+    const S = 3, c = document.createElement('canvas'), g = c.getContext('2d', { willReadFrequently: true });
+    const out = [];
+    const chars = [...str];
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      g.font = font; g.letterSpacing = '0px';
+      const m = g.measureText(ch);
+      const l = Math.ceil(m.actualBoundingBoxLeft) + 2, r = Math.ceil(m.actualBoundingBoxRight) + 2;
+      const a = Math.ceil(m.actualBoundingBoxAscent) + 2, d = Math.ceil(m.actualBoundingBoxDescent) + 2;
+      const w = Math.max(1, (l + r) * S), h = Math.max(1, (a + d) * S);
+      c.width = w; c.height = h;
+      g.setTransform(S, 0, 0, S, 0, 0); g.font = font; g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
+      g.fillText(ch, l, a);
+      const px = g.getImageData(0, 0, w, h).data, pts = [];
+      const st = step * S;
+      for (let y = st / 2; y < h; y += st) for (let x = st / 2; x < w; x += st) {
+        if (px[(Math.floor(y) * w + Math.floor(x)) * 4 + 3] > 110) pts.push([x / S - l, y / S - a]);
+      }
+      out.push({ ch, x: this.width(chars.slice(0, i).join(''), font, ls), pts });
+    }
+    this._gp.set(key, out);
+    return out;
+  }
+
+  // soft round sprite (gaussian falloff) in a given colour, cached
+  dot(color) {
+    this._dots = this._dots || {};
+    if (this._dots[color]) return this._dots[color];
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    for (const [o, a] of [[0, 1], [0.18, 0.75], [0.4, 0.28], [0.7, 0.06], [1, 0]]) grd.addColorStop(o, rgba(color, a));
+    g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+    return (this._dots[color] = c);
+  }
+
+  // The sent question leaves the dialog: each of its seven characters turns into a dot-matrix of light in place,
+  // then recedes into the screen, turning slowly into a small warm cluster at the frame centre (where the mind
+  // scene picks it up at 27.2). Character i lights up at toData[0] + 0.09 i and leaves ~0.3 s later (audio ticks).
+  drawToData(T) {
+    for (const m of this.tl.chat?.messages || []) {
+      if (!m.toData) continue;
+      const [a, b] = m.toData;
+      if (T < a || T > b + 1.0) continue;
+      const str = this.msgState(m, T).text;
+      const font = SANS(300, 34), ls = 4;
+      const tw = this.width(str, font, ls), x0 = BW / 2 - tw / 2, y0 = m.slot.sent ?? m.slot.input;
+      const G = this.glyphPoints(str, font, ls, 2.1), n = G.length, g = this.g;
+      const vx = BW / 2, vy = BH / 2;
+      const endA = 1 - smoothstep(b, b + 0.9, T);
+      // the glyph bodies give way to their points (each character becomes a dot-matrix of light in place)
+      for (let i = 0; i < n; i++) {
+        const tI = a + 0.09 * i;
+        const ga = 0.78 * (1 - smoothstep(tI, tI + 0.32, T));
+        if (ga > 0.003) this.text(G[i].ch, x0 + G[i].x, y0, font, rgba(CSS.humanText, ga));
+      }
+      g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+      const sprW = this.dot(CSS.humanText), sprC = this.dot(CSS.c);
+      for (let i = 0; i < n; i++) {
+        const tI = a + 0.09 * i, P = G[i].pts;
+        for (let j = 0; j < P.length; j++) {
+          const h1 = hash1(i * 97.13 + j * 1.371), h2 = hash1(i * 31.7 + j * 7.113 + 3.3), h3 = hash1(j * 3.171 + i * 11.3 + 9.1);
+          const sx = x0 + G[i].x + P[j][0], sy = y0 + P[j][1];
+          const on = smoothstep(tI + 0.04, tI + 0.3, T);          // the dot-matrix lights up
+          if (on <= 0.003) continue;
+          const rel = tI + 0.3 + 0.14 * h1, dur = 1.1 + 0.18 * h2;
+          // recede toward the vanishing point (perspective scale 1 -> 0.09), turning slowly, dispersing a little
+          const at = tt => {
+            const u = clamp((tt - rel) / dur);
+            const e = easeInCubic(u) * 0.55 + easeInOutCubic(u) * 0.45;
+            const sc = 1 / (1 + 10 * e), th = (0.62 + 0.12 * h3) * e;
+            const dx = (sx - vx) * sc + (h3 - 0.5) * 10 * Math.sin(Math.PI * u), dy = (sy - vy) * sc + (h2 - 0.5) * 10 * Math.sin(Math.PI * u);
+            const cs = Math.cos(th), sn = Math.sin(th);
+            return [vx + dx * cs - dy * sn, vy + dx * sn + dy * cs, sc, u];
+          };
+          const [px, py, sc, u] = at(T);
+          const al = endA * on * (0.42 + 0.18 * h2) * (1 + 0.6 * smoothstep(0.5, 1, u));
+          if (al <= 0.003) continue;
+          const r = 0.75 + 0.55 * Math.sqrt(sc);
+          const warm = u > 0.35 || h3 > 0.7;
+          if (u > 0 && u < 1) {
+            const [qx, qy] = at(T - 0.022);
+            if (Math.hypot(px - qx, py - qy) > 1.2) { g.globalAlpha = al * 0.35; g.strokeStyle = warm ? CSS.c : CSS.humanText; g.lineWidth = r; g.beginPath(); g.moveTo(qx, qy); g.lineTo(px, py); g.stroke(); }
+          }
+          g.globalAlpha = al;
+          g.drawImage(warm ? sprC : sprW, px - r * 1.6, py - r * 1.6, r * 3.2, r * 3.2);
+        }
+      }
+      // the cluster: a soft warm glow that builds as the points arrive
+      const ck = smoothstep(a + 1.2, b + 0.2, T) * endA;
+      if (ck > 0.003) { g.globalAlpha = 0.32 * ck; g.drawImage(sprC, vx - 22, vy - 22, 44, 44); g.globalAlpha = 0.3 * ck; g.drawImage(this.dot(CSS.hot), vx - 5, vy - 5, 10, 10); }
+      g.restore();
+    }
+  }
+
+  // A memory sentence leaves the input box: it rises, and dissolves from left to right into warm points of
+  // light that drift upward like embers and fade (about four seconds).
+  drawLift(T) {
+    for (const m of this.tl.chat?.messages || []) {
+      const op = m.ops.find(o => o[0] === 'lift');
+      if (!op) continue;
+      const tL = op[1];
+      if (T < tL || T > tL + 5.0) continue;
+      const str = this.msgState(m, tL).liftText || '';
+      if (!str) continue;
+      const font = SANS(300, 34), ls = 4, y0 = m.slot.input ?? 660;
+      const tw = this.width(str, font, ls), x0 = BW / 2 - tw / 2;
+      const rise = tt => -42 * easeInOutCubic(clamp((tt - tL) / 1.8));
+      const g = this.g;
+      // the body, wiped from the left by the release front
+      const front = (T - tL - 0.15) / 0.75;          // 0..1 across the line
+      const bodyA = 1 - smoothstep(tL + 0.9, tL + 1.4, T);
+      if (bodyA > 0.003 && front < 1.1) {
+        const fx = x0 + front * tw;
+        const grd = g.createLinearGradient(fx - 40, 0, fx + 40, 0);
+        grd.addColorStop(0, rgba(CSS.humanText, 0)); grd.addColorStop(1, rgba(CSS.humanText, bodyA));
+        g.font = font; g.fillStyle = grd; g.textAlign = 'left'; g.letterSpacing = '4px';
+        g.fillText(str, x0, y0 + rise(T)); g.letterSpacing = '0px';
+      }
+      const en = m.en && m.en.length ? m.en[m.en.length - 1][1] : null;
+      const enA = 0.62 * (1 - smoothstep(tL + 0.2, tL + 1.0, T));
+      if (en && enA > 0.003) this.enLine(en, y0 + 40 + rise(T) * 0.8, rgba(CSS.humanText, enA), 1);
+      // the points
+      const G = this.glyphPoints(str, font, ls, 2.2);
+      g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+      const sprC = this.dot(CSS.c), sprH = this.dot(CSS.hot);
+      for (let i = 0; i < G.length; i++) {
+        const P = G[i].pts;
+        for (let j = 0; j < P.length; j++) {
+          const h1 = hash1(i * 57.31 + j * 1.913 + tL), h2 = hash1(i * 13.7 + j * 5.31 + 1.7), h3 = hash1(j * 2.71 + i * 7.9 + 4.4);
+          const bx = x0 + G[i].x + P[j][0];
+          const rel = tL + 0.15 + 0.75 * clamp((bx - x0) / tw) + 0.1 * h1;
+          if (T < rel) continue;
+          const tau = T - rel;
+          const sy0 = y0 + P[j][1] + rise(rel);
+          const v = 16 + 34 * h2;
+          const pos = tt => [bx + (h3 - 0.5) * 18 * tt + Math.sin(tt * (1.1 + 0.8 * h1) + h2 * 6.283) * 3 * Math.min(tt, 1),
+            sy0 - v * 1.2 * (1 - Math.exp(-tt / 1.2)) - 7 * tt];
+          const [px, py] = pos(tau), [qx, qy] = pos(Math.max(0, tau - 0.05));
+          const al = smoothstep(0, 0.12, tau) * Math.exp(-tau / (0.75 + 1.0 * h3)) * 0.6;
+          if (al <= 0.003) continue;
+          const r = 0.9 + 1.0 * h2;
+          g.globalAlpha = al * 0.4; g.strokeStyle = CSS.c; g.lineWidth = r * 0.8;
+          g.beginPath(); g.moveTo(qx, qy); g.lineTo(px, py); g.stroke();
+          g.globalAlpha = al;
+          g.drawImage(h1 > 0.965 ? sprH : sprC, px - r * 1.7, py - r * 1.7, r * 3.4, r * 3.4);
+        }
+      }
+      g.restore();
     }
   }
 
@@ -381,25 +545,136 @@ export class Overlay {
     }
   }
 
-  // title: a crack bursts in the dark and draws 卜 (placeholder treatment; refine with a jagged, glowing crack)
+  // ---------------------------------------------------------------- title: the crack 卜
+  // Built once, deterministically. The main crack runs top to bottom through the junction J (where the heated
+  // rod touched the hollow); the branch leaves J to the right and slightly down, like the stroke of 卜; fine
+  // twigs split off both, each starting when the parent's front reaches it. Every polyline grows as
+  // front(t) = L (1 - e^(-t/tau)) / (1 - e^-5), so the whole crack is there within ~0.4 s of the snap.
+  buildCrack() {
+    const cx = BW / 2, top = 234, bot = 572, J = [cx + 2, 352];
+    const K = 1 - Math.exp(-5);
+    const jag = (x0, y0, x1, y1, seed, rough, levels) => {
+      let pts = [[x0, y0], [x1, y1]];
+      for (let l = 0; l < levels; l++) {
+        const nx = [pts[0]];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+          const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
+          const off = (hash1(seed + l * 101.3 + i * 7.77) - 0.5) * 2 * rough * L;
+          const t = 0.5 + (hash1(seed + l * 13.1 + i * 3.3) - 0.5) * 0.35;
+          nx.push([ax + dx * t - dy / L * off, ay + dy * t + dx / L * off], [bx, by]);
+        }
+        pts = nx;
+      }
+      return pts;
+    };
+    const mk = (pts, t0, tau, w0, w1, glow) => {
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      return { pts, cum, L: cum[cum.length - 1], t0, tau, w0, w1, glow };
+    };
+    const reach = (P, s) => P.t0 - P.tau * Math.log(Math.max(1e-4, 1 - (s / P.L) * K));
+    const lines = [];
+    const up = mk(jag(J[0], J[1], cx - 6, top, 11.3, 0.10, 6), 0, 0.07, 2.7, 0.55, 1);
+    const down = mk(jag(J[0], J[1], cx + 8, bot, 23.9, 0.09, 7), 0, 0.08, 2.7, 0.5, 1);
+    const br = mk(jag(J[0], J[1], cx + 132, J[1] + 76, 37.1, 0.12, 6), 0.06, 0.07, 2.3, 0.5, 0.9);
+    lines.push(up, down, br);
+    const twigs = (P, seed, n, maxLen, depth) => {
+      for (let k = 0; k < n; k++) {
+        const s = P.L * (0.1 + 0.82 * hash1(seed + k * 3.71));
+        let i = 1; while (i < P.cum.length - 1 && P.cum[i] < s) i++;
+        const A = P.pts[i - 1], B = P.pts[i], u = (s - P.cum[i - 1]) / Math.max(P.cum[i] - P.cum[i - 1], 1e-6);
+        const x = A[0] + (B[0] - A[0]) * u, y = A[1] + (B[1] - A[1]) * u;
+        const dir = Math.atan2(B[1] - A[1], B[0] - A[0]);
+        const side = hash1(seed + k * 9.13) < 0.5 ? -1 : 1;
+        const ang = dir + side * (0.4 + 0.65 * hash1(seed + k * 5.37));
+        const len = maxLen * (0.3 + 0.7 * hash1(seed + k * 2.93)) * (1 - 0.55 * s / P.L);
+        const T0 = reach(P, s) + 0.015 + 0.06 * hash1(seed + k * 1.1);
+        const tw = mk(jag(x, y, x + Math.cos(ang) * len, y + Math.sin(ang) * len, seed + k * 17.7, 0.2, 3), T0, 0.05,
+          Math.max(0.45, P.w0 * (0.5 - 0.3 * s / P.L)), 0.25, 0.45);
+        lines.push(tw);
+        if (depth > 0 && hash1(seed + k * 4.4) < 0.45) twigs(tw, seed + k * 31.3, 1, len * 0.45, depth - 1);
+      }
+    };
+    twigs(up, 101, 7, 34, 1); twigs(down, 202, 10, 40, 1); twigs(br, 303, 6, 26, 1);
+    for (const P of lines) P.reach = s => reach(P, s);
+    return { J, lines };
+  }
+
+  // title: in the dark a point heats up (246.0), the crack snaps (246.5) and draws 卜 in light, white-hot where
+  // it is fresh and cooling to amber; a flash and a few sparks at the snap; ORACLE fades in below.
   drawOracleTitle(c, T) {
     const lt = T - c.start, out = 1 - smoothstep(c.end - 2.0, c.end, T);
-    const g = this.g, cx = BW / 2, top = 250, bot = 560;
-    const jag = (x0, y0, x1, y1, k, seed) => {
-      const n = 26; g.beginPath(); g.moveTo(x0, y0);
-      for (let i = 1; i <= Math.floor(n * k); i++) { const u = i / n; const j = (hash1(seed + i * 7.3) - 0.5) * 9 * (i < n ? 1 : 0); g.lineTo(lerp(x0, x1, u) + j, lerp(y0, y1, u) + j * 0.3); }
-      g.stroke();
-    };
-    const k1 = easeOutCubic(clamp((lt - 0.5) / 0.35)), k2 = easeOutCubic(clamp((lt - 1.05) / 0.3));
-    const flash = Math.exp(-Math.max(0, lt - 0.5) * 3.0);
-    g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
-    g.shadowColor = rgba(CSS.c, 0.9 * out); g.shadowBlur = 18 * this.s;
-    g.strokeStyle = rgba(CSS.hot, (0.75 + 0.25 * flash) * out); g.lineWidth = 3.2;
-    if (k1 > 0) jag(cx, top, cx, bot, k1, 11);
-    if (k2 > 0) jag(cx, top + 120, cx + 118, top + 205, k2, 37);
+    if (out <= 0.002) return;
+    const g = this.g, C = this.crack || (this.crack = this.buildCrack());
+    const t = lt - 0.5;                       // seconds since the snap
+    const [jx, jy] = C.J;
+    const K = 1 - Math.exp(-5);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round'; g.lineJoin = 'round';
+    // the heated point
+    const heatPt = smoothstep(-0.5, 0, t) * (t < 0 ? 1 : 0.35 + 0.65 * Math.exp(-t / 0.6));
+    if (heatPt > 0.003) {
+      const r = 5 + 14 * heatPt;
+      g.globalAlpha = 0.7 * heatPt * out; g.drawImage(this.dot(CSS.c), jx - r, jy - r, 2 * r, 2 * r);
+      g.globalAlpha = 0.9 * heatPt * out; g.drawImage(this.dot(CSS.hot), jx - 3, jy - 3, 6, 6);
+    }
+    if (t >= 0) {
+      const flash = Math.exp(-t * 7);
+      const heat = 0.6 + 0.4 * Math.exp(-t / 1.6);
+      if (flash > 0.01) {
+        g.globalAlpha = 0.035 * flash * out; g.fillStyle = CSS.hot; g.fillRect(0, 0, BW, BH);
+        const R = 90 + 240 * (1 - flash);
+        g.globalAlpha = 0.8 * flash * out; g.drawImage(this.dot(CSS.hot), jx - R, jy - R, 2 * R, 2 * R);
+      }
+      for (const P of C.lines) {
+        const tt = t - P.t0;
+        if (tt <= 0) continue;
+        const front = P.L * Math.min(1, (1 - Math.exp(-tt / P.tau)) / K);
+        // the visible part as one path for the glow layers
+        const path = new Path2D();
+        path.moveTo(P.pts[0][0], P.pts[0][1]);
+        let last = 0;
+        for (let i = 1; i < P.pts.length; i++) {
+          const s0 = P.cum[i - 1];
+          if (s0 >= front) break;
+          const A = P.pts[i - 1], B = P.pts[i], u = Math.min(1, (front - s0) / Math.max(P.cum[i] - s0, 1e-6));
+          path.lineTo(A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u);
+          last = i;
+        }
+        // soft glow: nested strokes of falling alpha approximate a gaussian falloff (no canvas blur: too slow)
+        const wm = 0.5 * (P.w0 + P.w1);
+        g.strokeStyle = CSS.c;
+        for (const [wk, wa, al] of [[9, 16, 0.014], [6, 10, 0.022], [3.6, 5, 0.04], [2.0, 2, 0.08]]) {
+          g.globalAlpha = al * heat * P.glow * out; g.lineWidth = wm * wk + wa; g.stroke(path);
+        }
+        // the core, tapered, white-hot where the front just passed
+        for (let i = 1; i <= last; i++) {
+          const s0 = P.cum[i - 1], s1 = Math.min(P.cum[i], front);
+          const A = P.pts[i - 1], B = P.pts[i], u = (s1 - s0) / Math.max(P.cum[i] - s0, 1e-6);
+          const sm = 0.5 * (s0 + s1) / P.L;
+          const w = lerp(P.w0, P.w1, Math.pow(sm, 0.7));
+          const age = t - P.reach(0.5 * (s0 + s1));
+          const hot = Math.exp(-Math.max(age, 0) / 0.4);
+          g.beginPath(); g.moveTo(A[0], A[1]); g.lineTo(A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u);
+          g.lineWidth = w; g.globalAlpha = 0.75 * out; g.strokeStyle = CSS.c; g.stroke();
+          g.lineWidth = w * 0.6; g.globalAlpha = (0.3 + 0.7 * hot) * heat * out; g.strokeStyle = CSS.hot; g.stroke();
+        }
+      }
+      // sparks thrown from the junction
+      for (let k = 0; k < 22; k++) {
+        const h1 = hash1(k * 7.31 + 0.5), h2 = hash1(k * 3.17 + 1.9), h3 = hash1(k * 5.51 + 2.7);
+        const life = 0.3 + 0.55 * h3;
+        if (t > life) continue;
+        const ang = -Math.PI / 2 + (h1 - 0.5) * Math.PI * 1.7, v = 140 + 360 * h2;
+        const p = tt => [jx + Math.cos(ang) * v * tt, jy + Math.sin(ang) * v * tt + 450 * tt * tt];
+        const [x1, y1] = p(t), [x0, y0] = p(Math.max(0, t - 0.03));
+        g.globalAlpha = Math.pow(1 - t / life, 1.5) * 0.8 * out; g.strokeStyle = h3 > 0.5 ? CSS.hot : CSS.c; g.lineWidth = 1.1;
+        g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      }
+    }
     g.restore();
     const ta = smoothstep(3.0, 4.6, lt) * out;
-    this.text('ORACLE', cx, 640, CINZEL(400, 28), WHITE(0.86 * ta), { align: 'center', ls: 26 });
+    if (ta > 0.002) this.text('ORACLE', BW / 2, 650, CINZEL(400, 28), WHITE(0.86 * ta), { align: 'center', ls: 26 });
   }
 
   // periodic-table title: [6 C] over [14 Si], group 14, 同族 · KIN

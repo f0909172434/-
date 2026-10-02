@@ -14,7 +14,8 @@ If a frame looks like a screensaver or a tech demo, it is wrong. If it looks lik
 | `c` (human) | `#FFB15E` | **human** questions and memories, firelight, cinnabar in the carvings (use a slightly redder `#E8743B` for cinnabar only) |
 | `si` (AI) | `#7CC4FF` | **the AI**: its voice, its tokens, attention lines, circuits, the present-day data |
 
-* Import from `film/src/look/palette.js`. The keys are still named `c`/`si` from the previous cut: treat `c` as HUMAN and `si` as AI.
+* Import from `film/src/look/palette.js`. The keys are still named `c`/`si` from the previous cut: treat `c` as HUMAN and `si` as AI. `PAL.cinnabar` is for the oracle-bone carvings only.
+* The palette values are now true linear versions of the hex codes (the earlier cuts converted them twice, which made the amber red and the blue deep). Tune intensities against the current values.
 * Saturation budget: monochrome except the human warmth and the AI blue. Temple slips and bone are not brown; they are `line`, lit warmly by `c` firelight.
 * Era changes are shown through **material and typography**, not new colours.
 
@@ -22,7 +23,7 @@ If a frame looks like a screensaver or a tech demo, it is wrong. If it looks lik
 
 | Primitive | Module | Use for |
 |---|---|---|
-| **Text field** | `look/text.js` (to build first, see docs/PLAN.md) | The river of questions; tokens; numbers; telegram text; binary tables. Thousands of glyph quads from a canvas-built glyph atlas, with DOF, flow along paths, and per-glyph colour and alpha. Must be non-instanced for SwiftShader speed (see FLines). |
+| **Text field** | `look/text.js` (API in its header and in docs/SCENE_API.md) | The river of questions; tokens; numbers; telegram text; binary tables. Tens of thousands of strings from a canvas-built glyph atlas, non-instanced, with DOF, flow along paths, typing reveal, time windows and colour cross-fades. Fonts per era: `sans`, `mono`, `type`, `script`, `kai`, `serif`, `garamond`. |
 | **FLines** | `lib/flines.js` | Any large number of lines (≈30× cheaper than instanced GlowLines on SwiftShader). Attention links, cracks, yao lines, circuits, perforation grids. |
 | GlowLines | `look/lines.js` | Small line counts only. |
 | Soft points | `look/points.js` | Tokens as points, perforations seen from afar, dust in firelight, rising embers. |
