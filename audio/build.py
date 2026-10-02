@@ -58,6 +58,64 @@ def crack_twigs():
     return TWIGS_FALLBACK, 'fallback'
 
 
+def _mulberry32(seed):
+    """film/src/lib/random.js mulberry32, bit-exact (uint32 arithmetic)."""
+    st = [seed & 0xffffffff]
+    imul = lambda a, b: (a * b) & 0xffffffff
+
+    def nxt():
+        st[0] = (st[0] + 0x6D2B79F5) & 0xffffffff
+        t = st[0]
+        t = imul(t ^ (t >> 15), t | 1)
+        t ^= (t + imul(t ^ (t >> 7), t | 61)) & 0xffffffff
+        return ((t ^ (t >> 14)) & 0xffffffff) / 4294967296.0
+    return nxt
+
+
+def mind_sync(t0):
+    """Sync points of the finished mind scene (film/src/scenes/mind.js; local time + shot start t0).
+    Falls back to the values the scene's author reported."""
+    S = dict(bloom=27.30, cols=(31.0, 32.4), col_step=0.07, pour=32.7, touch=33.17, tail=34.52, arc=0.75,
+             links=[(0, 2, 0.62, 34.0), (0, 3, 0.47, 34.5), (0, 4, 0.55, 35.0), (0, 5, 0.21, 36.0),
+                    (1, 5, 0.12, 36.35), (2, 5, 0.18, 36.7), (3, 5, 0.09, 37.05), (4, 5, 0.14, 37.4),
+                    (5, 6, 0.26, 37.75)],
+             heads=[(0, 6, 0.3, 37.95 + 0.16 * k) for k in range(6)], lines=(39.0, 40.0), lit_end=42.3,
+             src='reported')
+    try:
+        js = open(os.path.join(ROOT, 'film', 'src', 'scenes', 'mind.js'), encoding='utf-8').read()
+        g = lambda name: float(re.search(r'\b' + name + r'\s*=\s*' + NUM, js).group(1))
+        ext0, ext1, str0, cold = g('EXT0'), g('EXT1'), g('STR0'), g('COLD')
+        S['cols'] = (t0 + ext0, t0 + ext1)
+        S['col_step'] = cold
+        S['pour'] = t0 + str0
+        S['arc'] = g('ARC_DUR')
+        S['lines'] = (t0 + g('T_QUERY'), t0 + g('T_REGION'))
+        body = re.search(r'const LINKS = \[(.*?)\];', js, re.S).group(1)
+        S['links'] = [(int(a), int(b), float(w), t0 + float(t)) for a, b, w, t in
+                      re.findall(r'\[(\d+),\s*(\d+),\s*' + NUM + r',\s*' + NUM + r'\]', body)]
+        nh, ht = int(g('HEADS')), g('HEAD_T')
+        heads = []
+        for h in range(1, nh + 1):           # the scene's own construction, same RNG stream
+            rnd = _mulberry32(900 + h * 7)
+            rint = lambda a, b: int(np.floor(a + (b + 1 - a) * rnd()))
+            n_ = 4 + rint(0, 3)
+            used = set()
+            for k in range(n_):
+                a = rint(0, 5)
+                b = rint(a + 1, 6)
+                if a * 8 + b in used:
+                    continue
+                used.add(a * 8 + b)
+                rnd()                          # hh
+                w = 0.08 + 0.45 * rnd() * rnd()
+                heads.append((a, b, w, t0 + ht + 0.16 * (h - 1) + 0.07 * k))
+        S['heads'] = sorted(heads, key=lambda x: x[3])
+        S['src'] = 'mind.js'
+    except Exception as e:  # pragma: no cover
+        S['src'] = f'reported ({e})'
+    return S
+
+
 def chat_events(tl):
     """Keystrokes exactly as overlay.js msgState() reveals the text: type (first char at t0, then the
     per-char delay: array entry i, or its last entry, or a constant), del (one backspace every dt), send."""
@@ -154,6 +212,7 @@ def load_times(path):
     T['dive'] = (cue_num('dives', NUM + r'\s*[-–]\s*' + NUM + r' the camera dives', 43.0),
                  cue_num('dives', NUM + r'\s*[-–]\s*' + NUM + r' the camera dives', 45.0, group=2))
     T['river_card'] = card('ai', T['river'], T['river'] + 20, 50.0)
+    T['mind_sync'] = mind_sync(T['mind'])
     # eras (upstream)
     era_keys = [('modem', 70), ('teleprinter', 74), ('quill', 78), ('bamboo', 82), ('yarrow', 86), ('fire crackle', 92)]
     T['eras'] = [cue_num('UPSTREAM', NUM + r'\s+(?:dry\s+)?' + k.split()[0], d) for k, d in era_keys]
@@ -250,7 +309,7 @@ def main():
     tc, ta, tm1 = T['crack'], T['answer'], T['memory_end']
     lay_pre = (T['eras'][4] - 2.0, tc + 1.0)
     lay_rush = (T['rush'] - 2.0, ta + 0.5)
-    lay_mem = (T['lifts'][0] - 1.0 if T['lifts'] else T['memory'] - 3.0, tm1 + 1.0)
+    lay_mem = (T['lifts'][0] - 1.0 if T['lifts'] else T['memory'] - 3.0, tm1 + 4.0)
     M = mix.Bus('music', n, {'pre': lay_pre, 'rush': lay_rush, 'mem': lay_mem})
     S = mix.Bus('sfx', n, {'pre': lay_pre, 'rush': lay_rush})
     A = mix.Bus('ambience', n, {'fire': (T['eras'][5] - 2.0, T['lineage'] + 6.0), 'rush': lay_rush,

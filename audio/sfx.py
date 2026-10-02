@@ -682,13 +682,13 @@ def _room(S, A, T):
     d0 = T['mind'] + 1.6
     rt = room_tone(d0, seed=1)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (0.6, 1.0), (T['mind'] - 0.6, 1.0), (d0, 0.0)])[None]
-    A.add(0.0, rt, -1.0, ROOM)
-    A.add(T['car'] - 0.8, distant_car(7.5, 2.4, seed=2), -9.0, {'room': 0.1, 'hall': 0.25})
+    A.add(0.0, rt, -23.0, ROOM)
+    A.add(T['car'] - 0.8, distant_car(7.5, 2.4, seed=2), -29.0, {'room': 0.1, 'hall': 0.25})
     # the answer: the same room; at 3 a.m. the fridge cycles off in the long silence
     ta, te = T['answer'], T['memory'] + 3.0
     rt = room_tone(te - ta, seed=3, fridge_off=T['fridge_off'] - ta)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (T['answer_fade'], 1.0), (T['memory'] - ta, 1.0), (te - ta, 0.0)])[None]
-    A.add(ta, rt, -1.0, ROOM)
+    A.add(ta, rt, -23.0, ROOM)
 
 
 def _keys(S, T):
@@ -696,22 +696,22 @@ def _keys(S, T):
         kind = e['kind']
         if kind == 'ai':
             f = 5274.0 * (1 + 0.012 * ((k * 7) % 5 - 2))
-            S.add(e['t'], P(ai_tick(seed=k, f=f), 0.05), -11.0, {'room': 0.15, 'space': 0.12})
+            S.add(e['t'], P(ai_tick(seed=k, f=f), 0.05), -16.0, {'room': 0.15, 'space': 0.12})
             continue
         r = R(1000 + k)
         if kind == 'enter':
-            S.add(e['t'], P(laptop_key('enter', 1.0, seed=k), 0.12), -5.0, ROOM)
-            S.add(e['t'] + 0.035, P(send_tick(seed=k), 0.0), -7.0, {'room': 0.1, 'space': 0.3})
+            S.add(e['t'], P(laptop_key('enter', 1.0, seed=k), 0.12), -27.0, ROOM)
+            S.add(e['t'] + 0.035, P(send_tick(seed=k), 0.0), -24.0, {'room': 0.1, 'space': 0.3})
             continue
         if kind == 'bs':
             v = 0.85 - 0.05 * (e['i'] % 3)
-            S.add(e['t'], P(laptop_key('bs', v, seed=k), 0.2), -6.0, ROOM)
+            S.add(e['t'], P(laptop_key('bs', v, seed=k), 0.2), -25.0, ROOM)
             continue
         # memories at the end are typed more slowly and more softly than the first question
         soft = e['msg'] in T['soft_msgs']
         v = r.uniform(0.75, 1.0) * (0.8 if soft else 1.0)
         S.add(e['t'], P(laptop_key('space' if kind == 'space' else 'key', v, seed=k), r.uniform(-0.15, 0.1)),
-              -6.0, ROOM)
+              -25.0, ROOM)
 
 
 def _todata(S, A, T):
@@ -722,41 +722,82 @@ def _todata(S, A, T):
     r = R(40)
     for i, t in enumerate(ticks):
         p = -0.42 + 0.84 * i / max(m - 1, 1)
-        S.add(t, P(glass_ping(notes[i % 7], 0.75, seed=i, t60=0.8, click=0.5), p), -13.0, DATA)
+        S.add(t, P(glass_ping(notes[i % 7], 0.75, seed=i, t60=0.8, click=0.5), p), -15.0, DATA)
         tm = 0.04 + 0.30 * r.beta(2.0, 2.2, 30)
-        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -15.0, DATA)
+        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -20.0, DATA)
     t0 = ticks[0] + 0.25
     rise = T['mind'] + 0.1 - t0
-    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -8.0,
+    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -15.0,
           {'space': 0.5})
 
 
+def touch_ripple(pitch, vel=0.7, seed=0, big=False):
+    """A column of numbers touching the field: a soft low glass drop with a ripple."""
+    r = R(seed)
+    f0 = float(mtof(n2m(pitch)))
+    L = 1.6 if big else 0.9
+    n = ns(L)
+    t = tvec(n)
+    f = f0 * (1 + 0.5 * np.exp(-t / 0.012))
+    y = np.sin(TWO_PI * np.cumsum(f) / SR) * np.exp(-t / (0.35 if big else 0.18))
+    rip = np.sin(TWO_PI * np.cumsum(f0 * 2.01 * (1 + 0.02 * np.sin(TWO_PI * 9 * t))) / SR)
+    y += 0.35 * rip * np.exp(-t / (0.5 if big else 0.25)) * (0.5 + 0.5 * np.cos(TWO_PI * 7 * t))
+    y *= np.minimum(t / 0.0008, 1)
+    y += hp(r.standard_normal(n), 3000) * np.exp(-t / 0.0007) * 0.15
+    return fade(y * 0.12 * vel, 0, 0.05)
+
+
 def _mind(S, A, T):
-    # the seven tokens: a glass ping and a precise box click each
+    mv = T['mind_sync']
+    # 27.30: the warm cluster of light blooms into the seven characters
+    tb = mv['bloom']
+    for j, p in enumerate(['A5', 'C6', 'E6', 'A6']):
+        S.add(tb + 0.012 * j, P(glass_ping(p, 0.5 - 0.06 * j, seed=45 + j, t60=1.8, click=0.05), -0.3 + 0.2 * j),
+              -18.0, {'space': 0.55})
+    # the seven tokens: a glass ping and a precise box click each (the box snaps shut with a flash)
     notes = ['E6', 'D6', 'A5', 'G5', 'C6', 'A5', 'D6']
     for i, t in enumerate(T['pings']):
         p = -0.45 + 0.9 * i / 6
-        S.add(t, P(glass_ping(notes[i % 7], 0.85, seed=50 + i, t60=1.5, click=0.6), p), -6.0, DATA)
-        S.add(t, P(laptop_key('bs', 0.5, seed=60 + i, hold=0.03), p), -16.0, {'space': 0.2})
-    # vectors unroll: soft rapid clicks sweeping across
-    v0, v1 = T['vectors']
+        S.add(t, P(glass_ping(notes[i % 7], 0.85, seed=50 + i, t60=1.5, click=0.6), p), -8.0, DATA)
+        S.add(t, P(laptop_key('bs', 0.5, seed=60 + i, hold=0.03), p), -22.0, {'space': 0.2})
     r = R(70)
-    tm = np.arange(0.0, v1 - v0, 0.0437)
-    tm = tm + r.uniform(-0.003, 0.003, len(tm))
-    pans_ = np.interp(tm, [0, v1 - v0], [-0.7, 0.7])
-    sp = spray(v1 - v0 + 0.2, np.maximum(tm, 0), pans_, r, f_range=(2200, 4800), decay=(0.002, 0.005),
-               amp=(0.5, 1.0))
-    sp *= pts_env(sp.shape[1], [(0, 0), (0.6, 1.0), (v1 - v0 - 0.8, 1.0), (v1 - v0 + 0.2, 0)])[None]
-    S.add(v0, sp, -12.0, DATA)
+    # the vectors spill out of each token column (staggered), then pour down and touch the field
+    c0, c1, cs = mv['cols'][0], mv['cols'][1], mv['col_step']
+    pour, touch, tail = mv['pour'], mv['touch'], mv['tail']
+    ncol = len(T['pings'])
+    for i in range(ncol):
+        p = -0.45 + 0.9 * i / max(ncol - 1, 1)
+        ta = c0 + cs * i
+        tm = np.arange(0.0, max(c1 + cs * i - ta, 0.1), 0.05)
+        tm = tm + r.uniform(-0.006, 0.006, len(tm))
+        sp = spray(c1 + cs * i - ta + 0.1, np.maximum(tm, 0), p + r.normal(0, 0.04, len(tm)), r,
+                   f_range=(2600 + 250 * i, 4200 + 250 * i), decay=(0.002, 0.004), amp=(0.4, 1.0))
+        S.add(ta, sp, -17.0, DATA)
+        # pouring: a falling trickle until the column touches the field
+        tp0, tp1 = pour + cs * i, touch + cs * i
+        d = tp1 - tp0
+        k = int(d * 45)
+        tt = np.sort(r.uniform(0, d, k))
+        g = np.zeros((2, ns(d + 0.05)))
+        for j, tg in enumerate(tt):
+            f = 5200 * 2 ** (-1.2 * tg / d) * r.uniform(0.92, 1.08)
+            x = grain(f, r.uniform(0.002, 0.004), r) * (0.3 + 0.7 * tg / d)
+            ii = ns(tg)
+            m = min(len(x), g.shape[1] - ii)
+            g[:, ii:ii + m] += P(x[:m], p)
+        S.add(tp0, g, -20.0, DATA)
+        S.add(tp1, P(touch_ripple(['E4', 'D4', 'A3', 'G3', 'C4', 'A3', 'D4'][i % 7], 0.8, seed=80 + i), p), -12.0,
+              DATA)
+    S.add(tail, P(touch_ripple('A2', 0.9, seed=88, big=True), 0.3), -12.0, {'hall': 0.15, 'space': 0.5})
     # a faint granular shimmer fills the abstract space
     d = T['river'] - T['mind']
     gr = spray(d, r.uniform(0, d, int(d * 14)), r.uniform(-0.9, 0.9, int(d * 14)), r, f_range=(5000, 11000),
                decay=(0.01, 0.04), amp=(0.1, 0.5))
     gr *= pts_env(gr.shape[1], [(0, 0), (2.5, 1), (d - 2.0, 1), (d, 0)])[None]
-    A.add(T['mind'], gr, -22.0, {'space': 0.6})
+    A.add(T['mind'], gr, -26.0, {'space': 0.6})
     # the dive toward the lit region
     d0, d1 = T['dive']
-    S.add(d0, whoosh(d1 - d0, 1.2, 300, 6000, seed=71, pans=(0.3, -0.2), level=1.0, q=1.2), -9.0, {'space': 0.4})
+    S.add(d0, whoosh(d1 - d0, 1.2, 300, 6000, seed=71, pans=(0.3, -0.2), level=1.0, q=1.2), -12.0, {'space': 0.4})
 
 
 def _river(S, A, T):
@@ -821,14 +862,14 @@ def _bone(S, A, T):
     with S.layer('pre'):
         S.add(tr, P(rod_hiss(tc - tr, seed=100), 0.05), -1.0, {'room': 0.2, 'hall': 0.1})
     # THE CRACK: dry, sharp, resonant; a little night air around it, then silence
-    S.add(tc, P(crack(soft=False, seed=101, twigs=T['twigs']), 0.0), 2.0, {'room': 0.25, 'hall': 0.12})
+    S.add(tc, P(crack(soft=False, seed=101, twigs=T['twigs']), 0.0), -12.0, {'room': 0.25, 'hall': 0.12})
 
 
 def _lineage(S, A, T):
     t0 = T['lineage']
     g0 = T['yinyang'][0]
     # the crack's echo becomes rhythm: bounces that settle onto the grid
-    for k, (dt, lv) in enumerate([(0.0, -4), (0.5, -9), (0.875, -12), (1.125, -15), (1.3125, -18)]):
+    for k, (dt, lv) in enumerate([(0.0, -23), (0.5, -28), (0.875, -31), (1.125, -34), (1.3125, -37)]):
         tt = t0 + dt * (g0 - t0) / 1.5
         S.add(tt, P(crack_echo(seed=110 + k, level=0.8), 0.3 * (-1) ** k), lv, {'hall': 0.2, 'space': 0.4})
     # the hexagrams flip into 0 and 1
@@ -894,9 +935,9 @@ def _answer(S, A, T):
     for k, tl in enumerate(T['lifts']):
         nts = sets[min(k, 2)]
         for j, (dt, v) in enumerate([(0.0, 0.85), (0.14, 0.7), (0.31, 0.62), (0.55, 0.5)]):
-            S.add(tl + dt, P(wind_chime(nts[j], v, seed=300 + 10 * k + j), -0.15 + 0.12 * j), -5.0,
+            S.add(tl + dt, P(wind_chime(nts[j], v, seed=300 + 10 * k + j), -0.15 + 0.12 * j), -11.0,
                   {'hall': 0.25, 'space': 0.55})
-        S.add(tl, whoosh(0.7, 1.2, 800, 4500, seed=310 + k, pans=(-0.1, 0.25), level=0.5, q=1.4), -14.0,
+        S.add(tl, whoosh(0.7, 1.2, 800, 4500, seed=310 + k, pans=(-0.1, 0.25), level=0.5, q=1.4), -22.0,
               {'space': 0.4})
     # the memory river: the same voices, now warm and near, murmuring
     tm0, tm1 = T['memory'] - 1.0, T['memory_end']
@@ -917,5 +958,5 @@ def _title(S, A, T):
     r = R(400)
     em = bp(r.standard_normal(n), 2500, 9000) * (t / pre) ** 2 * 0.02
     em = em * (1 - np.exp(-(pre - t) / 0.01))
-    S.add(tc - pre, P(em, 0.0), -6.0, {'space': 0.3})
-    S.add(tc, P(crack(soft=True, seed=401, twigs=T['twigs']), 0.0), -3.0, {'hall': 0.25, 'space': 0.9})
+    S.add(tc - pre, P(em, 0.0), -20.0, {'space': 0.3})
+    S.add(tc, P(crack(soft=True, seed=401, twigs=T['twigs']), 0.0), -24.0, {'hall': 0.25, 'space': 0.9})

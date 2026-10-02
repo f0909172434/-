@@ -162,9 +162,9 @@ export const RIVER_S = RIVER.S;
 import { River } from './riverflow.js';
 let _rv = null;
 const RV = () => _rv || (_rv = new River());
-function centreS(R, sGuess) {
+function centreS(R, sGuess, y = 0.1) {
   const B = basis(R);
-  let lam = B.f[1] < -1e-3 ? (0.1 - R.y) / B.f[1] : 30;
+  let lam = B.f[1] < -1e-3 ? (y - R.y) / B.f[1] : 30;
   lam = clamp(lam, 0.5, 60);
   const px = R.x + B.f[0] * lam, pz = R.z + B.f[2] * lam;
   let best = 1e18, bs = sGuess;
@@ -173,8 +173,11 @@ function centreS(R, sGuess) {
     if (d < best) { best = d; bs = s; }
   }
   for (let s = bs - 0.5; s <= bs + 0.5; s += 0.02) { const f = RV().at(s), d = (f.x - px) ** 2 + (f.z - pz) ** 2; if (d < best) { best = d; bs = s; } }
-  return { s: bs, d: lam };
+  const f = RV().at(bs);
+  return { s: bs, d: lam, n: (px - f.x) * f.nx + (pz - f.z) * f.nz };
 }
+// where the centre ray of rig R meets height y: { s, n (river coordinates), d (distance) }
+export const rayS = (R, y = 0.1) => centreS(R, R.sc, y);
 const FT = { up: null, ret: null };
 function tab(mode, g0, g1, dg) {
   const n = Math.round((g1 - g0) / dg) + 1, s = new Float64Array(n), d = new Float64Array(n);

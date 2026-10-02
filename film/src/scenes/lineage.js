@@ -84,14 +84,16 @@ const lvX = (n, v) => 960 + (v - ((1 << n) - 1) / 2) * LV[n].p;
 const lvY = (n, k, s = LV[n].s) => YMID + ((n - 1) / 2 - k) * s;   // k = 0 bottom
 
 // diagram (square + circle), design px, centre DC
-const DCX = 960, DCY = 330;
-const SQ_D = 31, SQ_L = 17, SQ_G = 4.4, SQ_S = 4.4, SQ_W = 1.6;
-const R0 = 205, RS = 8.0, RW = 1.75;                // ring: first line radius, line spacing
-const R_NAME = 262;
+const DCX = 960, DCY = 326;
+const SQ_D = 31, SQ_L = 17, SQ_G = 4.4, SQ_S = 4.5, SQ_W = 1.3;
+const R0 = 203, RS = 8.0, RW = 1.35;                // ring: first line radius, line spacing
+const R_NAME = 259;
 const ringLen = r => 0.7 * r * TAU / 64;
 
 // Leibniz table (design px)
-const TB = { x0: 952, cw: 9.4, y0: 124, rh: 14, em: 13, emSmall: 8.2, dec: 1022 };
+// the page (p. 86 of the 1703 Mémoires): the table down the left margin, the operations to its right
+const PG = { x0: 862, x1: 1640, y0: 70, y1: 597 };
+const TB = { x0: 914, cw: 10.2, y0: 138, rh: 13.35, em: 14, emSmall: 8.6, dec: 985 };
 const TB_COLX = j => TB.x0 + j * TB.cw;
 const TB_ROWY = v => TB.y0 + v * TB.rh;
 
@@ -201,19 +203,40 @@ export default class Lineage {
   }
 
   buildMind() {
-    // layers of cells behind the die plane (world units), with lit cells, numbers and links
-    const layers = [];
-    for (let l = 1; l <= 16; l++) {
-      const z = -l * 3.0, cells = [];
-      const pitch = 0.36, nx = 34, ny = 18;
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-        const h = hash1(l * 97.1 + i * 13.7 + j * 7.3);
-        if (h < 0.72) continue;
-        cells.push({ x: (i - (nx - 1) / 2) * pitch, y: (j - (ny - 1) / 2) * pitch, lit: h > 0.93 ? 1 : 0, h });
+    // the die: the Baby's store bits become lit cells; Manhattan routes join lit cells (a glowing network)
+    const lit = [];
+    for (let b = 0; b < 1024; b++) if (this.store[b]) lit.push(b);
+    const isLit = (r, c) => r >= 0 && r < 32 && c >= 0 && c < 32 && this.store[r * 32 + c];
+    const routes = [];
+    for (const b of lit) {
+      const r = b >> 5, c = b & 31;
+      // to the next lit cell to the right in this row (within 7), else down this column (within 7)
+      let done = false;
+      for (let d = 2; d <= 7 && !done; d++) if (isLit(r, c + d)) { routes.push([[r, c], [r, c + d]]); done = true; }
+      for (let d = 1; d <= 7 && !done; d++) {
+        const c2 = c + Math.round((hash1(b * 1.7) - 0.5) * 6);
+        if (isLit(r + d, c2) && c2 !== c) { routes.push([[r, c], [r, c2], [r + d, c2]]); done = true; }
+        else if (isLit(r + d, c)) { routes.push([[r, c], [r + d, c]]); done = true; }
       }
-      layers.push({ z, pitch, cells, nx, ny });
     }
-    this.layers = layers;
+    this.routes = routes.map((R, i) => {
+      const cum = [0];
+      for (let k = 1; k < R.length; k++) cum.push(cum[k - 1] + Math.abs(R[k][0] - R[k - 1][0]) + Math.abs(R[k][1] - R[k - 1][1]));
+      return { pts: R, cum, L: cum[cum.length - 1], ph: hash1(i * 3.37), sp: 2.5 + 3 * hash1(i * 7.1) };
+    });
+    // the field the die opens onto (plane z = 0, extending in +y from the die): lattice pitch FP world units
+    const FP = 0.08, nx = 111, ny = 170;
+    this.field = { FP, nx, ny, x0: -(nx - 1) / 2 * FP, y0: -0.9 };
+    const inDie = (i, j) => Math.abs(this.field.x0 + i * FP) < 0.7 && Math.abs(this.field.y0 + j * FP) < 0.7;
+    this.inDie = inDie;
+    const nums = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const h = hash1(i * 12.9898 + j * 78.233);
+      if (h > 0.2 || inDie(i, j)) continue;
+      const v = Math.max(-0.99, Math.min(0.99, (hash1(i * 3.1 + j * 9.7) + hash1(i * 5.3 + j * 1.9) - 1) * 0.9));
+      nums.push({ i, j, v, h });
+    }
+    this.fieldNums = nums;
   }
 
   async buildText() {
@@ -255,7 +278,7 @@ export default class Lineage {
       this.sqDig.push(add({ text: String(b), font: 'garamond', size: 8.6 * PX, anchor: DA, pos: [0, 0, 0], color: LINE, intensity: 1.0, show: hidden }));
     }
     // the table: header, decimals, &c.
-    const tcx = (TB_COLX(0) + TB.dec + 14) / 2;
+    const tcx = (TB_COLX(0) - TB.cw / 2 + TB.dec + 16) / 2;
     this.tbHead = [
       add({ text: 'TABLE', font: 'garamond', size: 12.5 * PX, tracking: 0.25, pos: [wx(tcx), wy(TB.y0 - 50), 0], color: LINE, intensity: 0.95, show: hidden }),
       add({ text: 'DES NOMBRES.', font: 'garamond', size: 10.5 * PX, tracking: 0.2, pos: [wx(tcx), wy(TB.y0 - 31), 0], color: LINE, intensity: 0.85, show: hidden }),
@@ -263,27 +286,35 @@ export default class Lineage {
     this.tbDec = [];
     for (let v = 0; v <= 32; v++) this.tbDec.push(add({ text: String(v), font: 'garamond', size: TB.em * PX, anchor: [0, DA[1]], pos: [wx(TB.dec), wy(TB_ROWY(v)), 0], color: LINE, intensity: 0.9, show: hidden }));
     this.tbEtc = add({ text: '&c.', font: 'garamond', size: TB.em * PX, pos: [wx(TB_COLX(2.5)), wy(TB_ROWY(33) + 2), 0], color: LINE, intensity: 0.85, show: hidden });
-    // Leibniz's addition examples (p. 86): 110+111=1101 (6+7=13), 101+1011=10000 (5+11=16), 1110+10001=11111 (14+17=31)
-    this.addText = [];
-    const AX = 1290, AY = 236, ex = [[['110', '111', '1101'], [6, 7, 13]], [['101', '1011', '10000'], [5, 11, 16]], [['1110', '10001', '11111'], [14, 17, 31]]];
-    this.addText.push(add({ text: "Pour l'Addition", font: { family: 'CormorantItalic', weight: 400, style: 'italic' }, size: 17 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 58), 0], color: LINE, intensity: 0.85, show: hidden }));
-    this.addText.push(add({ text: 'par exemple.', font: { family: 'CormorantItalic', weight: 400, style: 'italic' }, size: 17 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 38), 0], color: LINE, intensity: 0.85, show: hidden }));
-    this.addRules = [];
-    ex.forEach(([bins, decs], e) => {
-      const x = AX + e * 118, rowsY = [AY, AY + 18, AY + 40];
-      bins.forEach((s, r) => this.addText.push(add({ text: s, font: 'garamond', size: 13 * PX, anchor: [1, DA[1]], pos: [wx(x + 44), wy(rowsY[r]), 0], color: LINE, intensity: 0.9, show: hidden })));
-      decs.forEach((d, r) => this.addText.push(add({ text: String(d), font: 'garamond', size: 13 * PX, anchor: [0, DA[1]], pos: [wx(x + 58), wy(rowsY[r]), 0], color: LINE, intensity: 0.75, show: hidden })));
-      this.addRules.push({ x0: x + 6, x1: x + 80, y: AY + 29, xv: x + 51, y0: AY - 9, y1: AY + 48 });
+    // Leibniz's operations on the same page (p. 86): addition, subtraction, multiplication
+    this.addText = []; this.addRules = []; this.addTimes = [];
+    const ital = { family: 'CormorantItalic', weight: 400, style: 'italic' };
+    const OPS = [
+      ["Pour l'Addition par exemple.", [[['110', '111', '1101'], [6, 7, 13]], [['101', '1011', '10000'], [5, 11, 16]], [['1110', '10001', '11111'], [14, 17, 31]]]],
+      ['Pour la Soustraction.', [[['1101', '111', '110'], [13, 7, 6]], [['10000', '1011', '101'], [16, 11, 5]], [['11111', '10001', '1110'], [31, 17, 14]]]],
+      ['Pour la Multiplication.', [[['11', '11', '1001'], [3, 3, 9]], [['101', '11', '1111'], [5, 3, 15]], [['101', '101', '11001'], [5, 5, 25]]]],
+    ];
+    const OX = 1092, OY = 150, OH = 142;
+    OPS.forEach(([label, exs], o) => {
+      const y0 = OY + o * OH, t0 = 16.75 + 0.85 * o;
+      this.addText.push(add({ text: label, font: ital, size: 18 * PX, anchor: [0, 0.5], pos: [wx(OX), wy(y0), 0], color: LINE, intensity: 0.8, show: hidden }));
+      this.addTimes.push(t0);
+      exs.forEach(([bins, decs], e) => {
+        const x = OX + 170 + e * 128, rowsY = [y0 + 34, y0 + 53, y0 + 77];
+        bins.forEach((str, r) => { this.addText.push(add({ text: str, font: 'garamond', size: 14 * PX, anchor: [1, DA[1]], pos: [wx(x + 50), wy(rowsY[r]), 0], color: LINE, intensity: 0.92, show: hidden })); this.addTimes.push(t0 + 0.12 + 0.1 * e + 0.05 * r); });
+        decs.forEach((d, r) => { this.addText.push(add({ text: String(d), font: 'garamond', size: 14 * PX, anchor: [0, DA[1]], pos: [wx(x + 64), wy(rowsY[r]), 0], color: LINE, intensity: 0.72, show: hidden })); this.addTimes.push(t0 + 0.16 + 0.1 * e + 0.05 * r); });
+        this.addRules.push({ t0: t0 + 0.2 + 0.1 * e, x0: x + 4, x1: x + 88, y: y0 + 65, xv: x + 57, y0: y0 + 24, y1: y0 + 86 });
+      });
     });
-    // mind numbers (vector components on lit cells)
-    this.mindNum = [];
-    let q = 0;
-    for (const L of this.layers) for (const c of L.cells) {
-      if (!c.lit) continue;
-      const val = (hash1(c.h * 91.7 + q) * 2 - 1);
-      const s = (val < 0 ? '−' : ' ') + Math.abs(val).toFixed(4);
-      this.mindNum.push({ L, c, i: add({ text: s, font: 'mono', size: 0.06, anchor: [0, 0.5], pos: [c.x + 0.05, c.y - 0.02, L.z], color: AI, intensity: 0.9, show: hidden }) });
-      q++;
+    // the field's numbers (the mind scene's vocabulary: weights with two decimals, mono)
+    this.fieldItems0 = items.length;
+    const F = this.field, ccx = wx(CRT.x), ccy = wy(CRT.y);
+    for (const N of this.fieldNums) {
+      const s2 = (N.v < 0 ? '−' : '') + Math.abs(N.v).toFixed(2);
+      const cold = N.h < 0.035;
+      add({ text: s2, font: 'mono', weight: 400, size: 0.027, anchor: [0.5, 0.5],
+        pos: [ccx + F.x0 + N.i * F.FP, ccy + F.y0 + N.j * F.FP, 0], ax: [1, 0, 0], ay: [0, 1, 0],
+        color: cold ? AI : LINE, intensity: cold ? 0.95 : 0.3 + 0.35 * Math.abs(N.v), show: [MIND0 + 0.35, 1e6, 0.6, 0] });
     }
     this.items = items;
     await tf.prepare(items);
@@ -346,7 +377,7 @@ export default class Lineage {
   // the diagram's placement in the frame: scale and centre (it slides left when the table appears)
   diag(t) {
     const e = ease(t, MOVE[0], MOVE[1]);
-    return { s: lerp(1, 0.76, e), x: lerp(DCX, 575, e), y: DCY };
+    return { s: lerp(1, 0.84, e), x: lerp(DCX, 505, e), y: lerp(DCY, 332, e) };
   }
   dp(X, Y, D) { return [D.x + (X - DCX) * D.s, D.y + (Y - DCY) * D.s]; }
   scalePose(P, D) {
@@ -379,7 +410,7 @@ export default class Lineage {
     if (t >= MOVE[0] - 0.1 && t < TAPE0 + 2.0) this.drawTable(t);
     if (t >= TAPE0 && t < PCB0 + 1.2) this.drawTape(t);
     if (t >= CRT0 && t < MIND0 + 1.0) this.drawCRT(t);
-    if (t >= PCB0 && t < MIND0 + 1.0) this.drawChip(t);
+    if (t >= PCB0 && t < MIND0 + 2.5) this.drawChip(t);
     if (t >= MIND0 - 0.05) this.drawMind(t);
     this.sl.end();
     this.updateText(t);
@@ -572,10 +603,12 @@ export default class Lineage {
       }
       // the square's frame
       const hs = 4 * SQ_D + 6, fr = [[-hs, -hs], [hs, -hs], [hs, hs], [-hs, hs], [-hs, -hs]];
-      for (let i = 0; i < 4; i++) {
+      const k = sat(gk * 1.3 - 0.3);
+      if (k > 0) for (let i = 0; i < 4; i++) {
+        // each edge grows from its midpoint
         const [x0, y0] = this.dp(DCX + fr[i][0], DCY + fr[i][1], D), [x1, y1] = this.dp(DCX + fr[i + 1][0], DCY + fr[i + 1][1], D);
-        const k = sat(gk * 1.3 - 0.3);
-        if (k > 0) this.L(x0, y0, lerp(x0, x1, k), lerp(y0, y1, k), 0.7, LINE, 0.16 * fade);
+        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        this.L(lerp(mx, x0, k), lerp(my, y0, k), lerp(mx, x1, k), lerp(my, y1, k), 0.7, LINE, 0.16 * fade);
       }
     }
   }
@@ -592,6 +625,15 @@ export default class Lineage {
   drawTable(t) {
     const out = 1 - ease(t, TAPE0, TAPE0 + 0.7);
     const I0 = 0.55;
+    // the page's corner marks (a mount, as in a catalogue plate)
+    const pk = ease(t, MOVE[0] + 0.3, MOVE[1] + 0.4) * out;
+    if (pk > 0) {
+      const arm = 18 * pk;
+      for (const [x, y, sx, sy] of [[PG.x0, PG.y0, 1, 1], [PG.x1, PG.y0, -1, 1], [PG.x0, PG.y1, 1, -1], [PG.x1, PG.y1, -1, -1]]) {
+        this.L(x, y, x + sx * arm, y, 0.8, LINE, 0.32);
+        this.L(x, y, x, y + sy * arm, 0.8, LINE, 0.32);
+      }
+    }
     // rows that have arrived
     const arr = v => FLY0 + v * FLY_STEP + FLY_DUR;
     const rowsIn = v => t >= arr(v);
@@ -622,10 +664,11 @@ export default class Lineage {
         this.L(x0, TB_ROWY(v) + TB.rh / 2, lerp(x0, x1, e), TB_ROWY(v) + TB.rh / 2, 0.75, LINE, I0 * out);
       }
       // the sums' rules (addition examples)
-      const ak = ease(t, 17.4, 18.6) * out;
-      if (ak > 0) for (const R of this.addRules) {
-        this.L(R.x0, R.y, lerp(R.x0, R.x1, ak), R.y, 0.7, LINE, 0.45 * ak);
-        this.L(R.xv, R.y0, R.xv, lerp(R.y0, R.y1, ak), 0.7, LINE, 0.4 * ak);
+      for (const R of this.addRules) {
+        const ak = ease(t, R.t0, R.t0 + 0.45) * out;
+        if (ak <= 0) continue;
+        this.L(R.x0, R.y, lerp(R.x0, R.x1, ak), R.y, 0.7, LINE, 0.45);
+        this.L(R.xv, R.y0, R.xv, lerp(R.y0, R.y1, ak), 0.7, LINE, 0.4);
       }
     }
   }
@@ -740,135 +783,138 @@ export default class Lineage {
   // ---------------------------------------------------------------------------------------------- 153 the board, 155 the die
   drawChip(t) {
     const col = AI;
-    const fadeOut = 1 - ease(t, MIND0 + 0.2, MIND0 + 0.9);
+    const fadeOut = 1 - ease(t, MIND0 + 1.9, MIND0 + 2.4);
     if (fadeOut <= 0) return;
     const grow = ease(t, PCB0 + 0.4, PCB0 + 1.8);
     const cx = CRT.x, cy = CRT.y;
     const zoom = this.cam.zoom;
+    const tracesOut = 1 - ease(t, DIE0 + 1.2, MIND0 + 0.2);
     // pins
-    const pk = ease(t, PCB0 + 0.5, PCB0 + 1.0);
+    const pk = ease(t, PCB0 + 0.5, PCB0 + 1.0) * tracesOut;
     if (pk > 0) for (const tr of this.traces) {
       const [a, b] = tr.pts;
-      this.L(cx + a[0], cy + a[1], cx + lerp(a[0], b[0], pk), cy + lerp(a[1], b[1], pk), 1.4, col, 0.8 * fadeOut);
+      this.L(cx + a[0], cy + a[1], cx + lerp(a[0], b[0], pk), cy + lerp(a[1], b[1], pk), 1.4, col, 0.75 * fadeOut);
     }
-    // traces grow outward, with pulses travelling on them
-    if (grow > 0) for (const tr of this.traces) {
+    // traces grow outward, with pulses travelling in toward the chip
+    if (grow > 0 && tracesOut > 0) for (const tr of this.traces) {
       const Lg = tr.L * grow * (0.75 + 0.25 * tr.ph);
-      polyline(tr.pts, tr.cum, 0, Lg, (x0, y0, x1, y1) => this.L(cx + x0, cy + y0, cx + x1, cy + y1, 0.9, col, 0.42 * fadeOut));
-      // pulses
-      const sp = 180 * tr.sp;
+      polyline(tr.pts, tr.cum, 0, Lg, (x0, y0, x1, y1) => this.L(cx + x0, cy + y0, cx + x1, cy + y1, 0.85, col, 0.38 * fadeOut * tracesOut));
+      const sp = 170 * tr.sp;
       for (let q = 0; q < 2; q++) {
-        const s = ((t * sp + tr.ph * 900 + q * 450) % 900);
-        if (s > Lg) continue;
-        polyline(tr.pts, tr.cum, Math.max(0, s - 14), s, (x0, y0, x1, y1) => this.L(cx + x0, cy + y0, cx + x1, cy + y1, 1.6, col, 1.6 * fadeOut));
+        const s0 = 900 - ((t * sp + tr.ph * 900 + q * 450) % 900);
+        if (s0 > Lg) continue;
+        polyline(tr.pts, tr.cum, Math.max(0, s0 - 16), s0, (x0, y0, x1, y1) => this.L(cx + x0, cy + y0, cx + x1, cy + y1, 1.5, col, 1.5 * fadeOut * tracesOut));
       }
     }
-    // the die: bond wires, pads, a grid that reveals finer levels as we push in
     const dk = ease(t, PCB0 + 0.6, PCB0 + 1.4);
     if (dk <= 0) return;
-    const d = CHIP.die;
-    // die outline
-    const dr = [[-d, -d], [d, -d], [d, d], [-d, d], [-d, -d]];
-    for (let i = 0; i < 4; i++) this.L(cx + dr[i][0], cy + dr[i][1], cx + dr[i + 1][0], cy + dr[i + 1][1], 1.0, col, 0.7 * dk * fadeOut);
-    // bond wires from pads to pins
-    for (const tr of this.traces) {
-      const [a] = tr.pts;
-      const u = (tr.i - (CHIP.pins - 1) / 2) / CHIP.pins;
-      const pad = tr.side === 0 ? [d - 3, u * 2 * d * 0.9] : tr.side === 1 ? [-(d - 3), -u * 2 * d * 0.9] : tr.side === 2 ? [u * 2 * d * 0.9, -(d - 3)] : [-u * 2 * d * 0.9, d - 3];
-      this.L(cx + pad[0], cy + pad[1], cx + a[0] - Math.sign(a[0]) * 2 * (tr.side < 2 ? 1 : 0), cy + a[1] - Math.sign(a[1]) * 2 * (tr.side >= 2 ? 1 : 0), 0.5, col, 0.35 * dk * fadeOut);
-      this.L(cx + pad[0], cy + pad[1], cx + pad[0], cy + pad[1], 2.2, col, 0.9 * dk * fadeOut, 1, 1);
-    }
-    // level grids: spacing in design px, visible when the on-screen spacing is comfortable
-    const levels = [[d / 4, 0.55], [d / 16, 0.45], [d / 64, 0.38]];
-    const vx0 = this.cam.cx - 980 / zoom, vx1 = this.cam.cx + 980 / zoom, vy0 = this.cam.cy - 420 / zoom, vy1 = this.cam.cy + 420 / zoom;
-    for (const [sp, I] of levels) {
-      const on = sp * zoom;
-      const a = smoothstep(3.5, 9, on) * (1 - smoothstep(160, 400, on)) * dk * fadeOut;
-      if (a <= 0.01) continue;
-      const nLines = Math.round(2 * d / sp);
-      for (let i = 0; i <= nLines; i++) {
-        const o = -d + i * sp;
-        const X = cx + o, Y = cy + o;
-        if (X >= vx0 && X <= vx1) this.L(X, Math.max(cy - d, vy0), X, Math.min(cy + d, vy1), 0.6, col, I * a);
-        if (Y >= vy0 && Y <= vy1) this.L(Math.max(cx - d, vx0), Y, Math.min(cx + d, vx1), Y, 0.6, col, I * a);
-      }
-      // pulses on this level's wires
-      const np = 40;
-      for (let q = 0; q < np; q++) {
-        const h = hash1(q * 7.13 + sp), horiz = h < 0.5;
-        const li = Math.floor(hash1(q * 3.7 + sp * 1.3) * (nLines + 1));
-        const o = -d + li * sp;
-        const s = ((t * (0.35 + 0.5 * hash1(q * 1.9)) * 2 * d + hash1(q * 5.3) * 2 * d) % (2 * d)) - d;
-        const len = sp * 1.6;
-        if (horiz) { const Y = cy + o; if (Y < vy0 || Y > vy1) continue; this.L(cx + s - len, Y, cx + s, Y, 1.3, col, 1.4 * a); }
-        else { const X = cx + o; if (X < vx0 || X > vx1) continue; this.L(X, cy + s - len, X, cy + s, 1.3, col, 1.4 * a); }
-      }
-    }
-    // the store's bits become the die's lit cells
-    const cellP = 2 * d / 32;
+    const d = CHIP.die, P = 2 * d / 32;
     const ck = dk * fadeOut;
+    const vx0 = this.cam.cx - 990 / zoom, vx1 = this.cam.cx + 990 / zoom, vy0 = this.cam.cy - 420 / zoom, vy1 = this.cam.cy + 420 / zoom;
+    const tilted = t >= MIND0;
+    const inView = (X, Y, m = P) => tilted || (X > vx0 - m && X < vx1 + m && Y > vy0 - m && Y < vy1 + m);
+    const cellX = c => cx - d + (c + 0.5) * P, cellY = r => cy - d + (r + 0.5) * P;
+    // die outline and bond wires (fade as we pass inside)
+    const outer = ck * (1 - smoothstep(4, 9, zoom));
+    if (outer > 0.01) {
+      const dr = [[-d, -d], [d, -d], [d, d], [-d, d], [-d, -d]];
+      for (let i = 0; i < 4; i++) this.L(cx + dr[i][0], cy + dr[i][1], cx + dr[i + 1][0], cy + dr[i + 1][1], 1.0, col, 0.7 * outer);
+      for (const tr of this.traces) {
+        const [a] = tr.pts;
+        const u = (tr.i - (CHIP.pins - 1) / 2) / CHIP.pins;
+        const pad = tr.side === 0 ? [d - 3, u * 2 * d * 0.9] : tr.side === 1 ? [-(d - 3), -u * 2 * d * 0.9] : tr.side === 2 ? [u * 2 * d * 0.9, -(d - 3)] : [-u * 2 * d * 0.9, d - 3];
+        this.L(cx + pad[0], cy + pad[1], cx + a[0], cy + a[1], 0.5, col, 0.3 * outer * tracesOut);
+        this.L(cx + pad[0], cy + pad[1], cx + pad[0], cy + pad[1], 2.0, col, 0.8 * outer, 1, 1);
+      }
+    }
+    // lattice: a dot at every cell (visible once cells are a few pixels apart)
+    const dotA = smoothstep(5, 14, P * zoom) * ck;
+    if (dotA > 0.01) for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
+      const X = cellX(c), Y = cellY(r);
+      if (!inView(X, Y)) continue;
+      this.L(X, Y, X, Y, 1.3, LINE, 0.28 * dotA, 1, 1);
+    }
+    // routes and their pulses
+    const rk = ck * smoothstep(1.5, 4, P * zoom);
+    for (const R of this.routes) {
+      const pts = R.pts;
+      for (let k = 1; k < pts.length; k++) {
+        const X0 = cellX(pts[k - 1][1]), Y0 = cellY(pts[k - 1][0]), X1 = cellX(pts[k][1]), Y1 = cellY(pts[k][0]);
+        if (!inView((X0 + X1) / 2, (Y0 + Y1) / 2, Math.abs(X1 - X0) + Math.abs(Y1 - Y0) + P)) continue;
+        this.L(X0, Y0, X1, Y1, 0.8, col, 0.5 * rk);
+      }
+      // a pulse running along the route (in cell units)
+      const sPos = ((t * R.sp + R.ph * 40) % (R.L + 6)) - 3;
+      if (sPos < 0 || sPos > R.L) continue;
+      const s0 = Math.max(0, sPos - 0.9);
+      routeSeg(R, s0, sPos, (r0, c0, r1, c1) => this.L(cellX(c0), cellY(r0), cellX(c1), cellY(r1), 1.6, col, 1.7 * rk));
+    }
+    // lit cells (the store's 1s): a dash far away, a framed cell with a via up close
     for (let b = 0; b < 1024; b++) {
       if (!this.store[b]) continue;
-      const r = b >> 5, c = b & 31;
-      const X = cx - d + (c + 0.5) * cellP, Y = cy - d + (r + 0.5) * cellP;
-      if (X < vx0 - cellP || X > vx1 + cellP || Y < vy0 - cellP || Y > vy1 + cellP) continue;
-      const hs = cellP * 0.32;
-      const on = cellP * zoom;
-      const I = 0.9 * ck * (1 + 0.5 * Math.sin(t * 3 + b));
-      if (on < 6) this.L(X - hs, Y, X + hs, Y, 1.2, col, I);
-      else { const q = [[-hs, -hs], [hs, -hs], [hs, hs], [-hs, hs], [-hs, -hs]]; for (let i = 0; i < 4; i++) this.L(X + q[i][0], Y + q[i][1], X + q[i + 1][0], Y + q[i + 1][1], 0.9, col, I); }
+      const r = b >> 5, c = b & 31, X = cellX(c), Y = cellY(r);
+      if (!inView(X, Y)) continue;
+      const on = P * zoom, hs = P * 0.3;
+      const I = 1.0 * ck * (0.85 + 0.15 * Math.sin(t * 2.3 + b * 0.7));
+      const fr = smoothstep(7, 16, on);
+      if (fr < 1) this.L(X - P * 0.22, Y, X + P * 0.22, Y, 1.2, col, I * (1 - fr));
+      if (fr > 0) {
+        const q = [[-hs, -hs], [hs, -hs], [hs, hs], [-hs, hs], [-hs, -hs]];
+        for (let i = 0; i < 4; i++) this.L(X + q[i][0], Y + q[i][1], X + q[i + 1][0], Y + q[i + 1][1], 0.9, col, I * fr);
+        this.L(X, Y, X, Y, 2.4, col, 1.3 * I * fr, 1, 1);
+      }
     }
   }
 
   // ---------------------------------------------------------------------------------------------- 157 the mind
-  drawMind(t) {
-    // dolly-zoom away from the die (the die stays framed, the layers behind open up), then fly forward
-    const cam = this.camera;
-    const z0 = DIST / this.camera2D(t).zoom;             // the die framing at the end of the push-in
-    const H0 = 2 * z0 * Math.tan(THREE.MathUtils.degToRad(FOV0 / 2));
-    const dz = ease(t, MIND0, MIND0 + 1.1);
-    const fov = lerp(FOV0, 62, dz);
-    let camZ = H0 / (2 * Math.tan(THREE.MathUtils.degToRad(fov / 2)));
-    const fly = t > MIND0 + 0.9 ? Math.pow(t - (MIND0 + 0.9), 2.0) * 6.0 : 0;
-    camZ -= fly;
+  // The die is a wall facing us; the camera rises in front of it and pitches up until the die lies like a floor,
+  // the lattice runs on into the mind's field of numbers, and we fly over it, faster and faster.
+  mindCamera(t) {
+    const z0 = DIST / this.camera2D(t).zoom;
     const cx = wx(CRT.x), cy = wy(CRT.y);
-    cam.fov = fov;
-    cam.position.set(cx + 0.15 * Math.sin(t * 0.7) * dz, cy + 0.1 * dz, camZ);
-    cam.up.set(Math.sin(0.06 * fly * 0.1), 1, 0).normalize();
-    cam.lookAt(cx, cy, camZ - 10);
-    cam.updateProjectionMatrix();
-    cam.updateMatrixWorld();
-    this.mindCam = { camZ };
-    const k = ease(t, MIND0 + 0.2, MIND0 + 1.0);
+    const e = ease(t, MIND0, MIND0 + 1.25);
+    const fly = t > MIND0 + 1.0 ? 0.35 * (t - MIND0 - 1.0) + 1.15 * Math.pow(Math.max(0, t - MIND0 - 1.0), 2.6) : 0;
+    const pos = new THREE.Vector3(cx, lerp(cy, cy - 0.78, e) + fly, lerp(z0, 0.115, e));
+    const look = new THREE.Vector3(cx, lerp(cy, cy + 2.6, e) + fly, lerp(0, 0.0, e));
+    const up = new THREE.Vector3(0, lerp(1, 0, e), lerp(0, 1, e)).normalize();
+    const fov = lerp(FOV0, 58, ease(t, MIND0 + 0.1, MIND0 + 1.25));
+    return { pos, look, up, fov };
+  }
+  drawMind(t) {
+    const cam = this.camera, M = this.mindCamera(t);
+    cam.fov = M.fov; cam.position.copy(M.pos); cam.up.copy(M.up); cam.lookAt(M.look);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    const k = ease(t, MIND0 + 0.3, MIND0 + 1.2);
     if (k <= 0) return;
-    const col = AI;
-    const pv = new THREE.Vector3();
-    const projY = (x, y, z) => { pv.set(x, y, z).project(cam); return (1 - (pv.y * 0.5 + 0.5)) * 804; };
-    for (const Lr of this.layers) {
-      const z = Lr.z;
-      if (z > camZ - 0.2) continue;
-      const depth = camZ - z;
-      const I0 = k * (1 - smoothstep(11, 18, depth)) * smoothstep(0.2, 1.5, depth);
-      if (I0 <= 0.01) continue;
-      const hs = Lr.pitch * 0.36;
-      for (const c of Lr.cells) {
-        const X = cx + c.x, Y = cy + c.y;
-        pv.set(X, Y, z).project(cam);
-        if (pv.x < -1.1 || pv.x > 1.1 || pv.y < -1.15 || pv.y > 1.15) continue;
+    const F = this.field, ccx = wx(CRT.x), ccy = wy(CRT.y);
+    const pv = this._pv || (this._pv = new THREE.Vector3());
+    const near = M.pos.y;
+    // lattice dots in the field ahead (rows within ~3.4 units)
+    const j0 = Math.max(0, Math.floor((near - ccy - F.y0) / F.FP) - 1), j1 = Math.min(F.ny - 1, j0 + 46);
+    for (let j = j0; j <= j1; j++) {
+      const y = ccy + F.y0 + j * F.FP;
+      const dist = y - near;
+      if (dist < 0.02) continue;
+      const fadeD = smoothstep(0.03, 0.25, dist) * (1 - smoothstep(2.0, 3.4, dist));
+      if (fadeD <= 0.01) continue;
+      const half = Math.min(F.nx, Math.ceil((dist * 1.6 + 0.3) / F.FP));
+      const i0 = Math.max(0, Math.floor((F.nx - 1) / 2 - half)), i1 = Math.min(F.nx - 1, Math.ceil((F.nx - 1) / 2 + half));
+      for (let i = i0; i <= i1; i++) {
+        if (this.inDie(i, j)) continue;
+        const x = ccx + F.x0 + i * F.FP;
+        pv.set(x, y, 0).project(cam);
+        if (pv.z > 1 || Math.abs(pv.x) > 1.05 || Math.abs(pv.y) > 1.05) continue;
         const ys = (1 - (pv.y * 0.5 + 0.5)) * 804;
-        const m = 1 - this.mask * smoothstep(596, 650, ys);
-        const I = I0 * m * (c.lit ? 1.3 : 0.32);
-        if (I <= 0.01) continue;
-        const r = c.lit ? hs : hs * 0.8;
-        const q = [[-r, -r], [r, -r], [r, r], [-r, r], [-r, -r]];
-        for (let i = 0; i < 4; i++) this.sl.seg(X + q[i][0], Y + q[i][1], z, X + q[i + 1][0], Y + q[i + 1][1], z, c.lit ? 1.0 : 0.7, col[0] * I, col[1] * I, col[2] * I, 1, 0);
-      }
-      // links from lit cells to the next layer (attention)
-      for (const c of Lr.cells) {
-        if (!c.lit || c.h < 0.965) continue;
-        const X = cx + c.x, Y = cy + c.y;
-        const I = 0.25 * I0;
-        this.sl.seg(X, Y, z, X + (c.h - 0.98) * 40, Y + Math.sin(c.h * 50) * 0.8, z - 3.2, 0.6, col[0] * I, col[1] * I, col[2] * I, 1, 0);
+        const m = 1 - this.mask * smoothstep(560, 640, ys);
+        const h = hash1(i * 12.9898 + j * 78.233);
+        const lit = h > 0.955;
+        const I = k * fadeD * m * (lit ? 1.25 : 0.3);
+        if (I <= 0.004) continue;
+        const c = lit ? AI : LINE;
+        if (lit) {
+          const hs = F.FP * 0.18;
+          this.sl.seg(x - hs, y, 0, x + hs, y, 0, 1.4, c[0] * I, c[1] * I, c[2] * I, 1, 0);
+        } else this.sl.seg(x, y, 0, x, y, 0, 1.6, c[0] * I, c[1] * I, c[2] * I, 1, 1);
       }
     }
   }
@@ -945,18 +991,13 @@ export default class Lineage {
     tf.update(this.tbEtc, { show: tabOn ? [FLY0 + 32 * FLY_STEP + FLY_DUR + 0.25, 1e6, 0.5, 0] : H, intensity: 0.85 * tOut });
     const aOut = 1 - ease(t, TAPE0, TAPE0 + 0.7);
     this.addText.forEach((i, j) => {
-      const t0 = j < 2 ? 16.9 + 0.25 * j : 17.4 + 0.12 * (j - 2);
-      tf.update(i, { show: tabOn ? [t0, 1e6, 0.5, 0] : H, intensity: (j < 2 ? 0.8 : 0.85) * aOut });
+      const it = this.items[i];
+      if (!it._I) it._I = it.intensity;
+      tf.update(i, { show: tabOn ? [this.addTimes[j], 1e6, 0.45, 0] : H, intensity: it._I * aOut });
     });
-    // mind numbers
-    const mk = ease(t, MIND0 + 0.4, MIND0 + 1.2);
-    for (const M of this.mindNum) {
-      if (mk <= 0) { if (this.items[M.i].show !== H) tf.update(M.i, { show: H }); continue; }
-      const camZ = this.mindCam ? this.mindCam.camZ : 10;
-      const depth = camZ - M.L.z;
-      const I = 0.85 * mk * (1 - smoothstep(10, 22, depth)) * smoothstep(0.3, 1.5, depth);
-      tf.update(M.i, { pos: [wx(CRT.x) + M.c.x + 0.07, wy(CRT.y) + M.c.y, M.L.z], show: [-1e6, 1e6, 0, 0], intensity: I });
-    }
+    // the field's numbers: depth fade (and keep the near field dark while the card is up)
+    const nearFade = lerp(0.18, 0.05, smoothstep(159.2, 159.7, 130 + t));
+    tf.uniforms.uFade.value.set(t >= MIND0 ? nearFade : 0, t >= MIND0 ? nearFade + 0.25 : 0, t >= MIND0 ? 2.2 : 0, t >= MIND0 ? 3.6 : 0);
   }
 
   dispose() { this.sl.dispose(); this.tf.dispose(); }
@@ -986,5 +1027,17 @@ function polyline(pts, cum, s0, s1, emit) {
     const u0 = Math.max(0, (s0 - a) / (b - a)), u1 = Math.min(1, (s1 - a) / (b - a));
     const P = pts[i - 1], Q = pts[i];
     emit(P[0] + (Q[0] - P[0]) * u0, P[1] + (Q[1] - P[1]) * u0, P[0] + (Q[0] - P[0]) * u1, P[1] + (Q[1] - P[1]) * u1);
+  }
+}
+// emit the part of a route (cells: [[r, c], ...], Manhattan) between arc lengths s0 and s1 (cell units)
+function routeSeg(R, s0, s1, emit) {
+  const P = R.pts, cum = R.cum;
+  for (let k = 1; k < P.length; k++) {
+    const a = cum[k - 1], b = cum[k];
+    if (b <= s0) continue;
+    if (a >= s1) break;
+    const L = b - a || 1, u0 = Math.max(0, (s0 - a) / L), u1 = Math.min(1, (s1 - a) / L);
+    const A = P[k - 1], B = P[k];
+    emit(A[0] + (B[0] - A[0]) * u0, A[1] + (B[1] - A[1]) * u0, A[0] + (B[0] - A[0]) * u1, A[1] + (B[1] - A[1]) * u1);
   }
 }

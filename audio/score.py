@@ -159,28 +159,41 @@ def _mind(M, T):
         c = (s - 7) // 7
         k = s % 7
         fadeout = float(np.clip((tw + 0.5 - t) / 1.6, 0.25, 1.0))
-        if k in masks[min(c, 3)]:
+        busy = T['mind_sync']['cols'][0] - 0.1 <= t <= T['mind_sync']['tail'] + 0.2
+        if k in masks[min(c, 3)] and not busy:
             M.add(t, P(data_pluck(Q[k], (0.42 + 0.08 * min(c, 3)) * fadeout, seed=s), -0.4 + 0.8 * k / 6),
                   -5.0, DATA)
         if s % 2 == 0:
             M.add(t, P(data_pluck('A3' if (s // 2) % 2 == 0 else 'E4', 0.35 * fadeout, seed=900 + s, t60=0.6),
                        0.1), -9.0, DATA)
         s += 1
-    # attention: bowed glass, 她 reaches for 好 起 來 (glides), then 嗎 reaches for everything
-    for k, (dt, p1) in enumerate([(0.0, 'A4'), (0.6, 'G4'), (1.2, 'C5')]):
-        t = a0 + dt
-        d = a1 + 0.4 - t
-        M.add(t, P(bowed_glass([(0, 'E5'), (0.45, 'E5'), (1.35, p1)], d, att=0.45, rel=1.6, seed=510 + k,
-                               dyn=[(0, 1.0), (d - 2.5, 1.0), (d, 0.55)]), -0.35 + 0.3 * k), -8.0, DATA)
-    tq = a0 + 2.5
-    M.add(tq, P(bowed_glass([(0, 'A4')], a1 + 0.5 - tq, att=0.4, rel=1.6, seed=520), 0.0), -9.0, DATA)
-    for k, p in enumerate(['E5', 'D5', 'G4', 'C5', 'A5']):
-        t = tq + 0.55 + 0.25 * k
-        M.add(t, P(bowed_glass([(0, 'A4'), (0.15, 'A4'), (0.9, p)], a1 + 0.5 - t, att=0.5, rel=1.6,
-                               seed=530 + k), -0.6 + 0.3 * k), -12.0, DATA)
+    # attention arcs (0.75 s each, bowed glass), exactly the scene's links: 她 reaches for 好 起 來, then every
+    # token flows into 嗎 (and 嗎 into ？), each as loud as its attention weight; the faint heads behind
+    mv = T['mind_sync']
+    arc = mv['arc']
+    t_lines = mv['lines'][0]
+    TOK = ['E5', 'D5', 'A4', 'G4', 'C5', 'A4', 'D5']
+    wmax = max(w for _, _, w, _ in mv['links'])
+    for k, (ka, qb, w, ta) in enumerate(mv['links']):
+        d = t_lines + 0.3 - ta
+        lv = -9.0 + 20 * np.log10(max(w, 0.05) / wmax) * 0.6
+        M.add(ta, P(bowed_glass([(0, TOK[ka]), (arc, TOK[qb])], d, att=0.1, rel=0.8, seed=510 + k,
+                               dyn=[(0, 1.0), (arc, 0.75), (d - 1.0, 0.5), (d, 0.25)]),
+                    -0.5 + 0.17 * (ka + qb) / 2), lv, DATA)
+    for k, (ka, qb, w, ta) in enumerate(mv['heads']):
+        lv = -19.0 + 20 * np.log10(max(w, 0.05) / 0.3) * 0.5
+        M.add(ta, P(bowed_glass([(0, TOK[ka]), (arc, TOK[qb])], arc + 0.5, att=0.08, rel=0.6, seed=550 + k),
+                    -0.5 + 0.17 * (ka + qb) / 2), lv, DATA)
+    # seven thin lines leave the tokens (39.0) and arrive at the region of memory exactly on 40.0
+    tl0, tl1 = mv['lines']
+    for k, (p0, p1) in enumerate(zip(Q, ['E5', 'C5', 'A4', 'F4', 'C5', 'A4', 'G4'])):
+        d = tl1 - tl0 + 0.5
+        M.add(tl0, P(bowed_glass([(0, p0), (tl1 - tl0, p1)], d, att=tl1 - tl0, rel=0.5, seed=560 + k,
+                                dyn=[(0, 0.2), (tl1 - tl0, 1.0), (d, 0.3)]), -0.45 + 0.15 * k), -14.0, DATA)
     # the region of memory lights up: a warm chord (F major 9), swelling through the dive into the river
     d = tr + 0.6 - tw
-    dyn = [(0, 0.35), (1.2, 0.8), (3.0, 0.7), (d0 - tw, 0.72), (d - 0.4, 1.0), (d, 0.9)]
+    lit = mv['lit_end'] - tw
+    dyn = [(0, 0.4), (1.0, 0.85), (lit, 0.8), (d0 - tw, 0.62), (d - 0.4, 1.0), (d, 0.9)]
     M.add(tw, strings_chord(['F1', 'F2'], d, 'cb', att=1.0, rel=1.2, seed=540, dyn=dyn), -10.0, BIG)
     M.add(tw, strings_chord(['F2', 'C3'], d, 'vc', att=1.0, rel=1.2, seed=541, dyn=dyn), -11.0, BIG)
     M.add(tw, strings_chord(['A3', 'E4', 'G4'], d, 'vla', att=1.2, rel=1.2, seed=542, dyn=dyn, bright=0.4),
@@ -301,13 +314,13 @@ def _bone(M, T):
     b = 0.75
     hum = timed(Q, [fu + 0.2 + b * x for x in (0, 1, 3, 4, 5, 6.5, 7)], [b, 2 * b, b, b, 1.5 * b, 0.5 * b, 3.0],
                 0.8, octv=-1)
-    line(M, 'voice', hum, -5.0, {'hall': 0.35, 'space': 0.4}, 742, rel=1.6, glide=0.09, pan_c=-0.05)
+    line(M, 'voice', hum, -8.0, {'hall': 0.35, 'space': 0.4}, 742, rel=1.6, glide=0.09, pan_c=-0.05)
     # he carved the question into the shell: the bow answers, the xun far above
     tc3 = cards[2]
     M.add(tc3, P(stone_chime('A2', 0.5, seed=743), -0.15), -6.0, anc)
     bow = timed(['G3', 'A3', 'C4', 'D4', 'E4', 'D4', 'A3'],
                 [tc3 + x for x in (0.6, 1.3, 2.0, 3.2, 3.8, 5.4, 6.0)], [0.7, 0.7, 1.2, 0.6, 1.6, 0.6, 2.4], 0.75)
-    line(M, 'bow', bow, -9.0, anc, 744, rel=1.5, glide=0.13, nasal=1.0, pan_c=0.15)
+    line(M, 'bow', bow, -11.0, anc, 744, rel=1.5, glide=0.13, nasal=1.0, pan_c=0.15)
     line(M, 'xun', timed(['E5', 'D5'], [tc3 + 3.8, tc3 + 5.4], [1.6, 2.2], 0.5), -16.0, HUGE, 745, pan_c=-0.3)
     M.add(cards[3], P(stone_chime('E3', 0.4, seed=746), 0.05), -9.0, anc)
 
