@@ -937,7 +937,9 @@ export default class RiverScene {
 
   updateMemory(G, R, fk) {
     const ut = G - 212;
-    const fd = 11.5;
+    // focus on the stanza (the camera follows it)
+    const sS = STANZA.s0 + STANZA.v * (G - STANZA.g0) + STANZA.w / 2, Pst = this.river.world(sS, STANZA.h, STANZA.n);
+    const fd = Math.hypot(Pst[0] - R.x, Pst[1] - R.y, Pst[2] - R.z) / 0.92;
     for (const f of [this.tfM, this.tfMG, this.plM]) { f.uniforms.uTime.value = ut; f.uniforms.uFocus.value = fd * 0.92; }
     // dark under the chat (212-219), then the river comes up; brightest around 232
     const op = lerp(0.15, 0.82, smoothstep(218.5, 225, G)) * (1 + 0.16 * envelope(G, 226, 240, 5, 6));
