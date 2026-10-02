@@ -576,20 +576,20 @@ export default class RiverScene {
     {
       const pl = this.plate(88.9, 5.0, 940, 405), show = [T(86.0), T(92.6), 0.5, 0.8];
       this.yarrowPl = pl;
-      add(pl, { text: D.XICI, font: 'serif', size: 0.055, tracking: 0.25, anchor: [0, 0.5], color: PAL.line, intensity: 0.55, show: [T(86.3), T(92.6), 0.6, 0.8] }, -1.05, 0.62);
+      add(pl, { text: D.XICI, font: 'serif', size: 0.055, tracking: 0.25, anchor: [0, 0.5], color: PAL.line, intensity: 0.55, show: [T(86.3), T(92.6), 0.6, 0.8] }, -1.42, 0.62);
       this.yarrowNotes = [];
       const note = (text, x, y, t0, t1, I = 0.6, font = 'mono', size = 0.045) => { this.yarrowNotes.push(add(pl, { text, font, size, anchor: [0, 0.5], color: PAL.line, intensity: I, show: [T(t0), T(t1), 0.2, 0.3] }, x, y)); };
-      note('50', -1.05, -0.62, 86.4, 87.0);
-      note('49', -1.05, -0.62, 87.0, 89.6);
-      note('49 − 9 = 40', -0.55, -0.62, 88.55, 92.6, 0.62);
-      note('40 − 4 = 36', -0.55, -0.7, 89.15, 92.6, 0.5);
-      note('36 − 4 = 32 = 4 × 8', -0.55, -0.78, 89.7, 92.6, 0.5);
+      note('50', -1.42, -0.62, 86.4, 87.0);
+      note('49', -1.42, -0.62, 87.0, 92.6);
+      note('49 − 9 = 40', -0.98, -0.62, 88.55, 92.6, 0.62);
+      note('40 − 4 = 36', -0.98, -0.7, 89.15, 92.6, 0.5);
+      note('36 − 4 = 32 = 4 × 8', -0.98, -0.78, 89.7, 92.6, 0.5);
       // hexagram lines (values) and name
-      const hx = 0.78, hy = -0.42, step = 0.15;
+      const hx = 0.62, hy = -0.42, step = 0.15;
       this.hexPos = { hx, hy, step, w: 0.56 };
-      D.HEX.lines.forEach((v, i) => note(String(v), hx + 0.64, hy + i * step, YAO_T[i] + 0.15, 92.6, 0.45, 'mono', 0.04));
-      add(pl, { text: D.HEX.name, font: 'serif', vertical: true, size: 0.13, anchor: [0.5, 1], color: PAL.line, intensity: 1.05, show: [T(91.15), T(92.6), 0.45, 0.8] }, hx + 0.95, hy + 5 * step + 0.06);
-      add(pl, { text: D.HEX.judgement, font: 'serif', vertical: true, size: 0.045, anchor: [0.5, 1], color: PAL.line, intensity: 0.5, show: [T(91.35), T(92.6), 0.45, 0.8] }, hx + 1.12, hy + 5 * step + 0.06);
+      D.HEX.lines.forEach((v, i) => note(String(v), hx + 0.66, hy + i * step, YAO_T[i] + 0.15, 92.6, 0.45, 'mono', 0.04));
+      add(pl, { text: D.HEX.name, font: 'serif', vertical: true, size: 0.13, anchor: [0.5, 1], color: PAL.line, intensity: 1.05, show: [T(91.15), T(92.6), 0.45, 0.8] }, hx + 0.92, hy + 5 * step + 0.06);
+      add(pl, { text: D.HEX.judgement, font: 'serif', vertical: true, size: 0.045, anchor: [0.5, 1], color: PAL.line, intensity: 0.5, show: [T(91.35), T(92.6), 0.45, 0.8] }, hx + 1.08, hy + 5 * step + 0.06);
       ex.yarrow = pl;
     }
     this.exLines = new FLines({ resolution: this.res, aperture: 0.05, focus: 8 });
@@ -706,7 +706,7 @@ export default class RiverScene {
     const st = Array.from({ length: N }, (_, j) => ({ x: (j - 24.5) * sp, y: 0, I: 0.62, out: false }));
     // phase 1: one stalk set aside
     const kA = easeInOutCubic(smoothstep(86.8, 87.3, G));
-    st[0].x = lerp(st[0].x, -1.12, kA); st[0].y = lerp(0, 0.18, kA); st[0].I = lerp(0.62, 0.25, kA);
+    st[0].x = lerp(st[0].x, -0.97, kA); st[0].y = lerp(0, 0.18, kA); st[0].I = lerp(0.62, 0.25, kA);
     // the 49 close up, then the three changes
     const live = Array.from({ length: 49 }, (_, j) => j + 1);
     const pile = [];   // removed stalks (to the lower left)
@@ -737,10 +737,10 @@ export default class RiverScene {
       // removed stalks go to the pile at the lower left, the rest close up
       const removed = pool.filter(j => st[j].remove), kept = pool.filter(j => !st[j].remove);
       if (kr > 0) {
-        removed.forEach((j, i) => { const px = -1.12 + 0.012 * (pile.length + i), py = -0.36; st[j].x = lerp(st[j].x, px, kr); st[j].y = lerp(st[j].y, py, kr); st[j].I = lerp(st[j].I, 0.22, kr); });
+        removed.forEach((j, i) => { const px = -0.97 + 0.012 * (pile.length + i), py = -0.36; st[j].x = lerp(st[j].x, px, kr); st[j].y = lerp(st[j].y, py, kr); st[j].I = lerp(st[j].I, 0.22, kr); });
         kept.forEach((j, i) => { st[j].x = lerp(st[j].x, (i - (kept.length - 1) / 2) * sp, kr); st[j].y = lerp(st[j].y, 0, kr); });
       }
-      if (G >= t0 + d) { removed.forEach(j => { st[j].x = -1.12 + 0.012 * pile.length; st[j].y = -0.36; st[j].I = 0.22; pile.push(j); }); pool = kept; for (const j of pool) st[j].remove = false; }
+      if (G >= t0 + d) { removed.forEach(j => { st[j].x = -0.97 + 0.012 * pile.length; st[j].y = -0.36; st[j].I = 0.22; pile.push(j); }); pool = kept; for (const j of pool) st[j].remove = false; }
       else break;
     }
     // after the third change: 32 stalks in eight bundles of four
@@ -753,7 +753,7 @@ export default class RiverScene {
     }
     st.forEach((q, j) => {
       const h1 = hash1(j * 5.17), h2 = hash1(j * 2.31 + 4);
-      const len = 0.62 + 0.1 * h1, bow = (h2 - 0.5) * 0.03, x = q.x - 0.25, y = q.y - 0.12;
+      const len = 0.62 + 0.1 * h1, bow = (h2 - 0.5) * 0.03, x = q.x - 0.45, y = q.y - 0.12;
       const pts = [];
       for (let k = 0; k <= 5; k++) { const v = k / 5; pts.push(...pl.P(x + bow * Math.sin(Math.PI * v) + (h1 - 0.5) * 0.02 * v, y + v * len)); }
       out.push({ points: pts, color: WARM_LINE, intensity: q.I * vis, width: 1.25 });

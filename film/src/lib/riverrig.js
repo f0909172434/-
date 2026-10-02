@@ -27,7 +27,7 @@ export const ERA_MID = [72, 76, 80, 84, 89, 96];           // the exhibit of eac
 
 // upstream travel: base speed + a smooth surge through every stratum boundary (the camera lingers at each
 // exhibit and pushes through the boundaries, where the music changes texture)
-const SURGE = [[70, 13.0, 0.62], [74, 13.1, 0.62], [78, 13.1, 0.62], [82, 13.1, 0.62], [86, 12.6, 0.62], [92, 7.0, 0.8]];
+const SURGE = [[70, 13.0, 0.62], [74, 13.1, 0.62], [78, 13.1, 0.62], [82, 13.1, 0.62], [86, 12.6, 0.62], [92.3, 7.0, 0.6]];
 function speed(G) {
   // base: a slow glide in the present, lingering at each exhibit, almost still for the yarrow ritual
   let v = G < 66 ? 0.76 : G < 70 ? lerp(0.76, 0.5, smoothstep(66, 70, G)) : 0.5;
@@ -116,7 +116,7 @@ const MEM = {
   b: [[211, 0.4], [226, 0.5], [236, 2.4], [246, 2.8]],
   h: [[211, 1.5], [222, 1.4], [228, 1.85], [236, 3.2], [246, 3.6]],
   back: [[211, -2.6], [246, -3.2]],                                 // camera s relative to the stanza centre
-  lift: [[211, 0.05], [226, 0.05], [236, -0.55], [246, -0.62]],      // aim above (+) / below (-) the stanza
+  lift: [[211, 0.02], [226, 0.04], [236, 0.62], [246, 0.7]],         // aim above (+) the stanza: it sinks as the view opens
   fov: [[211, 25], [246, 26]],
 };
 // the human's sentences: a stanza standing in the river, flowing with the camera
