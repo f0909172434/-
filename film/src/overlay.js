@@ -117,7 +117,7 @@ export class Overlay {
     }
     // top-left: the year (CE / BCE), linear in time between keys so it rolls like an odometer
     if (h.year) {
-      const y = Math.round(keyInterp(h.year, T, false));
+      const y0 = Math.round(keyInterp(h.year, T, false)), y = y0 === 0 ? 1 : y0;   // there is no year 0
       const s = y > 0 ? `${y}` : `公元前 ${-y} 年 · ${-y} BCE`;
       this.g.fillStyle = rgba(CSS.si, 0.9 * a); this.g.beginPath(); this.g.arc(M + 4, M - 4.5, 3.2, 0, Math.PI * 2); this.g.fill();
       this.text('YEAR · 年', M + 16, M, MONO(400, 11), WHITE(0.6 * a), { ls: 3 });

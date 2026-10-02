@@ -63,13 +63,13 @@ void main(){
   vec4 c = mix(ca, cb, t);
   float z = c.w;
   // world width -> px at this depth; thin lines keep a minimum width and lose brightness instead
-  float wpx = aW.x * projectionMatrix[1][1] * 0.5 * uRes.y / max(z, 1e-4);
+  float wpx = min(aW.x * projectionMatrix[1][1] * 0.5 * uRes.y / max(z, 1e-4), uMaxW * uPxScale);
   float gain = 1.0;
   if (wpx < uMinPx * uPxScale) { gain = wpx / (uMinPx * uPxScale); wpx = uMinPx * uPxScale; }
   if (uAperture > 0.0) {
     float coc = uAperture * abs(z - uFocus) / max(z, 1e-6) * uPxScale * 100.0;
     float w2 = min(sqrt(wpx * wpx + coc * coc), uMaxW * uPxScale);
-    gain *= wpx / max(w2, 1e-3);
+    gain *= min(1.0, wpx / max(w2, 1e-3));
     wpx = w2;
   }
   float fade = (uFade.y > 0.0 ? smoothstep(uFade.x, uFade.y, z) : 1.0) * (uFade.w > 0.0 ? 1.0 - smoothstep(uFade.z, uFade.w, z) : 1.0);
@@ -119,7 +119,7 @@ export class PathLines {
     const W = new Float32Array(n * 8), K = new Float32Array(n * 8), P = new Float32Array(n * 4);
     const idx = new Uint32Array(n * 6);
     segs.forEach((q, i) => {
-      const col = q.color || { r: 1, g: 1, b: 1 }, I = q.intensity ?? 1, al = q.alpha ?? 1;
+      const c0 = q.color || { r: 1, g: 1, b: 1 }, col = Array.isArray(c0) ? { r: c0[0], g: c0[1], b: c0[2] } : c0, I = q.intensity ?? 1, al = q.alpha ?? 1;
       const sh = q.show || [-1e6, 1e6, 0, 0];
       for (let v = 0; v < 4; v++) {
         const o = i * 4 + v;

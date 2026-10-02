@@ -213,7 +213,8 @@ export default class Lineage {
       // to the next lit cell to the right in this row (within 7), else down this column (within 7)
       let done = false;
       for (let d = 2; d <= 7 && !done; d++) if (isLit(r, c + d)) { routes.push([[r, c], [r, c + d]]); done = true; }
-      for (let d = 1; d <= 7 && !done; d++) {
+      done = false;
+      for (let d = 2; d <= 7 && !done; d++) {
         const c2 = c + Math.round((hash1(b * 1.7) - 0.5) * 6);
         if (isLit(r + d, c2) && c2 !== c) { routes.push([[r, c], [r, c2], [r + d, c2]]); done = true; }
         else if (isLit(r + d, c)) { routes.push([[r, c], [r + d, c]]); done = true; }
@@ -237,6 +238,15 @@ export default class Lineage {
       nums.push({ i, j, v, h });
     }
     this.fieldNums = nums;
+    // vectors: columns of numbers standing on lit cells along the way (both sides of the flight line)
+    const cols = [];
+    for (let q = 0; q < 64; q++) {
+      const side = q & 1 ? 1 : -1;
+      const x = side * (0.42 + 1.0 * hash1(q * 4.7)), y = 0.6 + q * 0.19 + 0.1 * hash1(q * 2.3);
+      const n = 6 + Math.floor(9 * hash1(q * 8.1));
+      cols.push({ x, y, n, q });
+    }
+    this.vecCols = cols;
   }
 
   async buildText() {
@@ -306,6 +316,13 @@ export default class Lineage {
         this.addRules.push({ t0: t0 + 0.2 + 0.1 * e, x0: x + 4, x1: x + 88, y: y0 + 65, xv: x + 57, y0: y0 + 24, y1: y0 + 86 });
       });
     });
+    // vector columns (standing, facing the flight)
+    for (const V of this.vecCols) for (let r = 0; r < V.n; r++) {
+      const val = (hash1(V.q * 31.7 + r * 3.3) + hash1(V.q * 1.3 + r * 7.7) - 1) * 0.9;
+      add({ text: (val < 0 ? '−' : '') + Math.abs(val).toFixed(2), font: 'mono', weight: 400, size: 0.024, anchor: [0.5, 0],
+        pos: [wx(CRT.x) + V.x, wy(CRT.y) + V.y, 0.012 + r * 0.034], ax: [1, 0, 0], ay: [0, 0, 1],
+        color: r === V.n - 1 ? LINE : AI, intensity: 0.55 + 0.35 * Math.abs(val), show: [MIND0 + 0.8 + 0.02 * r, 1e6, 0.4, 0] });
+    }
     // the field's numbers (the mind scene's vocabulary: weights with two decimals, mono)
     this.fieldItems0 = items.length;
     const F = this.field, ccx = wx(CRT.x), ccy = wy(CRT.y);
@@ -327,11 +344,27 @@ export default class Lineage {
   L(X1, Y1, X2, Y2, w, col, I, a = 1, cap = 0) {
     if (I <= 0 || a <= 0) return;
     if (!cap && Math.abs(X2 - X1) + Math.abs(Y2 - Y1) < 0.02) return;
-    const ys = 402 + ((Y1 + Y2) / 2 - this.cam.cy) * this.cam.zoom;
-    const m = 1 - this.mask * smoothstep(596, 650, ys);
-    const k = I * m * this.gain;
-    if (k <= 0.0005) return;
-    this.sl.seg(wx(X1), wy(Y1), 0, wx(X2), wy(Y2), 0, w, col[0] * k, col[1] * k, col[2] * k, a, cap);
+    const k0 = I * this.gain;
+    if (this.mask < 0.005) { this.sl.seg(wx(X1), wy(Y1), 0, wx(X2), wy(Y2), 0, w, col[0] * k0, col[1] * k0, col[2] * k0, a, cap); return; }
+    const y1 = this.screenY(X1, Y1), y2 = this.screenY(X2, Y2);
+    const lo = this.proj3D ? 560 : 596, hi = this.proj3D ? 640 : 650;
+    // long segments reaching into the lower third are cut so the mask grades along them (pieces abut exactly)
+    const n = Math.max(y1, y2) > lo - 10 && Math.abs(y2 - y1) > 24 ? Math.min(48, Math.ceil(Math.abs(y2 - y1) / 16)) : 1;
+    for (let i = 0; i < n; i++) {
+      const u0 = i / n, u1 = (i + 1) / n;
+      const m = 1 - this.mask * smoothstep(lo, hi, lerp(y1, y2, (u0 + u1) / 2));
+      const k = k0 * m;
+      if (k <= 0.0005) continue;
+      this.sl.seg(wx(lerp(X1, X2, u0)), wy(lerp(Y1, Y2, u0)), 0, wx(lerp(X1, X2, u1)), wy(lerp(Y1, Y2, u1)), 0, w, col[0] * k, col[1] * k, col[2] * k, a, n > 1 ? 0 : cap);
+    }
+  }
+  screenY(X, Y) {
+    if (this.proj3D) {
+      const pv = this._pm || (this._pm = new THREE.Vector3());
+      pv.set(wx(X), wy(Y), 0).project(this.camera);
+      return pv.z > 1 ? 0 : (1 - (pv.y * 0.5 + 0.5)) * 804;
+    }
+    return 402 + (Y - this.cam.cy) * this.cam.zoom;
   }
   // long line drawn in pieces so that the mask grades smoothly along it
   LL(X1, Y1, X2, Y2, w, col, I, a = 1, piece = 40) {
@@ -403,6 +436,13 @@ export default class Lineage {
     cam.position.set(wx(c2.cx), wy(c2.cy), DIST / c2.zoom);
     cam.lookAt(wx(c2.cx), wy(c2.cy), 0);
     cam.updateProjectionMatrix();
+    this.proj3D = false;
+    if (t >= MIND0 - 0.05) {
+      const M = this.mindCamera(t);
+      cam.fov = M.fov; cam.position.copy(M.pos); cam.up.copy(M.up); cam.lookAt(M.look);
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      this.proj3D = true;
+    }
     this.sl.begin();
     if (t < 1.5) this.drawCrack(t);
     if (t >= 1.5 && t < RESHAPE) this.drawLevels(t);
@@ -419,7 +459,7 @@ export default class Lineage {
     const warm = 1 - smoothstep(18, 23, t);
     const post = {
       bloomStrength: 0.42, bloomThreshold: 0.95, bloomRadius: 0.8,
-      halation: 0.05 * warm, streak: 0.0, ca: 0.0006, vignette: 0.34, grain: 0.012,
+      halation: 0.05 * warm, streak: 0.0, ca: 0.0, vignette: 0.34, grain: 0.012,
       lift: [0.001, 0.0013, 0.002],
     };
     return { scene: this.scene, camera: cam, post };
@@ -436,6 +476,8 @@ export default class Lineage {
     if (t > DIE0) {
       const k = ramp(t, DIE0, MIND0);
       zoom *= Math.exp(Math.log(16) * easeInOutSine(k));
+      const e = easeInOutSine(k);
+      cx += -14 * e; cy += 18 * e;           // toward the data words (rows 14–26)
     }
     return { cx, cy, zoom };
   }
@@ -694,7 +736,7 @@ export default class Lineage {
     if (fade <= 0) return;
     const col = mixc(LINE, AI, 0.35 * ease(t, TAPE0 + 0.5, CRT0 + 1));
     const speed = t <= TAPE_RUN ? 0 : 1.2 / 0.45 * Math.exp((t - TAPE_RUN) / 0.45) * P;   // px / s
-    const blur = Math.min(speed * 0.0035, 60);
+    const blur = speed * 0.5 / 24 / 6;          // travel during one sub-frame (6 sub-frames, 180° shutter)
     const yRead = 330;
     // edges
     const hw = 3.4375 * P;
@@ -734,7 +776,9 @@ export default class Lineage {
   // a hole / dot, elongated vertically by motion blur within a sub-frame
   dot(x, y, r, blur, col, I) {
     if (r <= 0.05 || I <= 0) return;
-    if (blur > 0.5) this.L(x, y - blur / 2, x, y + blur / 2, 2 * r, col, I * (2 * r) / (2 * r + blur), 1, 1);
+    // moving: each sub-frame draws the stretch it travels, flat-ended, so the six sub-frames tile one even streak
+    if (blur > r) this.L(x, y - blur / 2, x, y + blur / 2, 2 * r, col, I * 0.785 * (2 * r) / blur, 1, 0);
+    else if (blur > 0.3) this.L(x, y - blur / 2, x, y + blur / 2, 2 * r, col, I, 1, 1);
     else this.L(x, y, x, y, 2 * r, col, I, 1, 1);
   }
 
@@ -870,32 +914,31 @@ export default class Lineage {
   // The die is a wall facing us; the camera rises in front of it and pitches up until the die lies like a floor,
   // the lattice runs on into the mind's field of numbers, and we fly over it, faster and faster.
   mindCamera(t) {
-    const z0 = DIST / this.camera2D(t).zoom;
-    const cx = wx(CRT.x), cy = wy(CRT.y);
+    const c2 = this.camera2D(t);
+    const z0 = DIST / c2.zoom;
+    const cx = wx(c2.cx), cy = wy(c2.cy);
     const e = ease(t, MIND0, MIND0 + 1.25);
     const fly = t > MIND0 + 1.0 ? 0.35 * (t - MIND0 - 1.0) + 1.15 * Math.pow(Math.max(0, t - MIND0 - 1.0), 2.6) : 0;
-    const pos = new THREE.Vector3(cx, lerp(cy, cy - 0.78, e) + fly, lerp(z0, 0.115, e));
-    const look = new THREE.Vector3(cx, lerp(cy, cy + 2.6, e) + fly, lerp(0, 0.0, e));
+    const pos = new THREE.Vector3(cx, lerp(cy, cy - 0.8, e) + fly, lerp(z0, 0.165, e));
+    const look = new THREE.Vector3(cx, lerp(cy, cy + 1.5, e) + fly, lerp(0, -0.03, e));
     const up = new THREE.Vector3(0, lerp(1, 0, e), lerp(0, 1, e)).normalize();
     const fov = lerp(FOV0, 58, ease(t, MIND0 + 0.1, MIND0 + 1.25));
     return { pos, look, up, fov };
   }
   drawMind(t) {
     const cam = this.camera, M = this.mindCamera(t);
-    cam.fov = M.fov; cam.position.copy(M.pos); cam.up.copy(M.up); cam.lookAt(M.look);
-    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const k = ease(t, MIND0 + 0.3, MIND0 + 1.2);
     if (k <= 0) return;
     const F = this.field, ccx = wx(CRT.x), ccy = wy(CRT.y);
     const pv = this._pv || (this._pv = new THREE.Vector3());
     const near = M.pos.y;
     // lattice dots in the field ahead (rows within ~3.4 units)
-    const j0 = Math.max(0, Math.floor((near - ccy - F.y0) / F.FP) - 1), j1 = Math.min(F.ny - 1, j0 + 46);
+    const j0 = Math.max(0, Math.floor((near - ccy - F.y0) / F.FP) - 1), j1 = Math.min(F.ny - 1, j0 + 32);
     for (let j = j0; j <= j1; j++) {
       const y = ccy + F.y0 + j * F.FP;
       const dist = y - near;
       if (dist < 0.02) continue;
-      const fadeD = smoothstep(0.03, 0.25, dist) * (1 - smoothstep(2.0, 3.4, dist));
+      const fadeD = smoothstep(0.03, 0.25, dist) * (1 - smoothstep(0.7, 1.9, dist));
       if (fadeD <= 0.01) continue;
       const half = Math.min(F.nx, Math.ceil((dist * 1.6 + 0.3) / F.FP));
       const i0 = Math.max(0, Math.floor((F.nx - 1) / 2 - half)), i1 = Math.min(F.nx - 1, Math.ceil((F.nx - 1) / 2 + half));
@@ -908,7 +951,7 @@ export default class Lineage {
         const m = 1 - this.mask * smoothstep(560, 640, ys);
         const h = hash1(i * 12.9898 + j * 78.233);
         const lit = h > 0.955;
-        const I = k * fadeD * m * (lit ? 1.25 : 0.3);
+        const I = k * fadeD * m * (lit ? 1.25 : 0.22);
         if (I <= 0.004) continue;
         const c = lit ? AI : LINE;
         if (lit) {
@@ -996,8 +1039,9 @@ export default class Lineage {
       tf.update(i, { show: tabOn ? [this.addTimes[j], 1e6, 0.45, 0] : H, intensity: it._I * aOut });
     });
     // the field's numbers: depth fade (and keep the near field dark while the card is up)
-    const nearFade = lerp(0.18, 0.05, smoothstep(159.2, 159.7, 130 + t));
-    tf.uniforms.uFade.value.set(t >= MIND0 ? nearFade : 0, t >= MIND0 ? nearFade + 0.25 : 0, t >= MIND0 ? 2.2 : 0, t >= MIND0 ? 3.6 : 0);
+    // (under the card the near field stays dark: a point on the floor nearer than ~0.5 lies in the lower third)
+    const nearFade = lerp(0.5, 0.1, smoothstep(159.15, 159.6, 130 + t));
+    tf.uniforms.uFade.value.set(t >= MIND0 ? nearFade : 0, t >= MIND0 ? nearFade + 0.3 : 0, t >= MIND0 ? 1.5 : 0, t >= MIND0 ? 2.5 : 0);
   }
 
   dispose() { this.sl.dispose(); this.tf.dispose(); }
