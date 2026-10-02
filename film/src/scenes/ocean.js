@@ -362,9 +362,9 @@ export default class Ocean {
           if (portAbove(S) > 0.0) { gl_FragColor = vec4(0.0); return; }
           float tmax = 34.0;
           if (d.y > 0.0) tmax = min(tmax, max(-S.y, 0.0) / d.y);
-          const int N = 20;
+          const int N = 28;
           float dt = tmax / float(N);
-          float j = hash12(gl_FragCoord.xy + fract(uTime * 7.31) * 91.0);
+          float j = 0.5 + 0.3 * (hash12(gl_FragCoord.xy + fract(uTime * 7.31) * 91.0) - 0.5);
           float acc = 0.0;
           for (int i = 0; i < N; i++) {
             float t = (float(i) + j) * dt;

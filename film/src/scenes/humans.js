@@ -218,7 +218,7 @@ void main(){ vec3 col = vec3(0.0024, 0.0033, 0.0068) + vec3(0.010, 0.016, 0.030)
 // from a procedural skeleton; dissolve, shimmer and shading happen here.
 const FIG_COMMON = simplex3 + /* glsl */`
 uniform float uT, uTime, uDisStart, uDisSpan, uDisMode;
-uniform vec3 uCenter;
+uniform vec3 uCenter, uPoleW, uCamPos;
 attribute vec4 aRnd; attribute float aH; attribute float aAura;
 float detachTime(){ float n = snoise(position*4.5 + vec3(uDisStart)); return uDisStart + uDisSpan * clamp(0.58*(1.0 - aH) + 0.16*aRnd.x + 0.30*n + 0.1, 0.0, 1.0); }
 vec3 dissolve(vec3 p, float age, out float alpha, out float starK){
@@ -229,20 +229,31 @@ vec3 dissolve(vec3 p, float age, out float alpha, out float starK){
     vec3 c = curl3(q);
     p += vec3(0.30, 0.0, -0.10)*age*(0.6 + 0.8*aRnd.w) + vec3(0.0, 1.0, 0.0)*(0.45*age + 0.16*age*age)*(0.6 + 0.8*aRnd.y) + c*0.30*age;
     alpha = exp(-age*0.38) * (1.0 - smoothstep(3.0, 5.0, age));
-  } else {                            // rising and spiralling up into the sky
+  } else {                            // rising, spiralling, then joining the turning sky near the pole
     float e = 1.0 - exp(-age*0.50);
     vec3 rel = p - uCenter;
     float ang = age*(0.8 + aRnd.w*1.1);
     float c = cos(ang), s = sin(ang);
     rel.xz = vec2(c*rel.x - s*rel.z, s*rel.x + c*rel.z);
-    rel.x *= 1.0 + e*e*(2.0 + 14.0*aRnd.y);
-    rel.z = rel.z*(1.0 + e*e*(1.0 + 4.0*aRnd.y)) - e*e*(0.5 + 3.0*aRnd.x);
-    rel.y += e*e*(2.0 + 12.0*aRnd.z) + 0.30*age;
+    rel.x *= 1.0 + e*e*(1.0 + 6.0*aRnd.y);
+    rel.z = rel.z*(1.0 + e*e*(0.5 + 2.0*aRnd.y)) - e*e*(0.3 + 1.5*aRnd.x);
+    rel.y += e*e*(1.0 + 5.0*aRnd.z) + 0.30*age;
     vec3 q = p*1.3 + vec3(0.0, -age*0.3, aRnd.x*9.0);
-    p = uCenter + rel + curl3(q)*0.10*age;
-    starK = smoothstep(0.8, 3.4, age);
-    float keep = step(0.84, aRnd.w);
-    alpha = mix(1.0 - smoothstep(1.4, 3.8, age), 1.0, keep) * (1.0 + 1.2*exp(-age*0.9));
+    vec3 rise = uCenter + rel + curl3(q)*0.10*age;
+    // a direction near the celestial pole, carried by the sky rotation since the moment of detachment
+    vec3 k = uPoleW;
+    vec3 e1 = normalize(cross(k, vec3(0.0, 1.0, 0.0))), e2 = cross(k, e1);
+    float th = 0.05 + 0.75*aRnd.y, ph = aRnd.z*6.2831853;
+    vec3 d0 = normalize(k*cos(th) + (e1*cos(ph) + e2*sin(ph))*sin(th));
+    float td = uT - age;
+    float skyA = -8.4*(pow(max(uT, 0.0)/14.0, 1.8) - pow(max(td, 0.0)/14.0, 1.8));
+    vec3 dS = d0*cos(skyA) + cross(k, d0)*sin(skyA) + k*dot(k, d0)*(1.0 - cos(skyA));
+    vec3 sky = uCamPos + dS*(28.0 + 20.0*aRnd.x);
+    float j = smoothstep(0.7, 3.2, age + aRnd.w*0.6);
+    p = mix(rise, sky, j*j*(3.0 - 2.0*j));
+    starK = smoothstep(1.4, 3.4, age + aRnd.w*0.6);
+    float keep = step(0.955, aRnd.w);
+    alpha = mix(1.0 - smoothstep(2.2, 3.8, age), 1.0, keep) * (1.0 + 1.4*exp(-age*0.7));
   }
   return p;
 }`;
@@ -273,7 +284,8 @@ void main(){
   gl_Position = projectionMatrix * mv;
   float sz = mix(uSize, 0.6*uSize, starK) * uPx / max(-mv.z, 0.1);
   float s = clamp(sz, 1.0, 3.0*uPx/756.0);
-  vCol = col * (sz*sz)/(s*s);
+  vCol = col * mix((sz*sz)/(s*s), 0.75, starK);
+  s = mix(s, 1.6*uPx/756.0, starK);
   gl_PointSize = s;
   if (alpha < 0.003) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; }
 }`;
@@ -496,7 +508,7 @@ function armSpec(J, P, side, gesture) {
     return { t: V.add(mid, [sg * 0.03 * s, -0.07 * s, -0.06 * s]), pole: V.add(S, [sg * 0.30, -0.10, -0.12]) };
   }
   if (gesture === 'point') {
-    const dir = V.norm([-0.20, 0.88, -0.44]);
+    const dir = V.norm([-0.10, 0.93, -0.36]);
     return { t: V.add(S, V.mul(dir, (P.uArm + P.fArm) * 0.97)), pole: V.add(S, [0.30, -0.25, 0.15]) };
   }
   return null;
@@ -966,7 +978,7 @@ export default class Humans {
       n++;
     }
     // brightest stars get trails in the time-lapse
-    const NT = 2200;
+    const NT = 1800;
     const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => flux[b] - flux[a]).slice(0, NT);
     for (const i of idx) trail[i] = 1;
     const geo = new THREE.BufferGeometry();
@@ -1122,7 +1134,7 @@ export default class Humans {
     this.child.setHeights(mkRef(OLD, ['hug', 'hug'], 'tail'));
     const px = this.uPx = this.ctx.height / (2 * Math.tan(WIDE_FOV * DEG / 2));
     const mkU = () => ({
-      uT: { value: 0 }, uTime: { value: 0 }, uDisStart: { value: 1e9 }, uDisSpan: { value: 1 }, uDisMode: { value: 0 }, uCenter: { value: new THREE.Vector3() },
+      uT: { value: 0 }, uTime: { value: 0 }, uDisStart: { value: 1e9 }, uDisSpan: { value: 1 }, uDisMode: { value: 0 }, uCenter: { value: new THREE.Vector3() }, uPoleW: { value: this.pole }, uCamPos: { value: new THREE.Vector3() },
       uPx: { value: px }, uSize: { value: 0.0125 }, uBright: { value: 0.30 }, uBias: { value: 0.03 }, uPulse: { value: 0 },
       uWarm: { value: new THREE.Vector3(1.0, 0.50, 0.17) }, uRim: { value: new THREE.Vector3(1.0, 0.74, 0.46) },
       uOcc: { value: 0.024 }, uInset: { value: 0.008 }, uColor: { value: new THREE.Vector3(0.050, 0.020, 0.006) },
@@ -1169,7 +1181,9 @@ export default class Humans {
     const Jp = bodyJoints(Pp);
     solveArm(Jp, Pp, 'L', armSpec(Jp, Pp, 'L', 'lean'));
     const dy = placeC.y - placeP.y;
-    const tgt = V.add(Jc.shR, [childOff - offP, dy + 0.025, 0.035]);
+    const kgrow = mode === 'wide' ? 0 : smootherstep(0.3, 4.4, t);
+    const far = V.add(Jc.shR, [-0.01, -0.035, 0.04]), near = V.add(V.lerp(Jc.shL, Jc.neck, 0.25), [0.02, 0.03, 0.07]);
+    const tgt = V.add(V.lerp(far, near, kgrow), [childOff - offP, dy, 0]);
     solveArm(Jp, Pp, 'R', { t: tgt, pole: V.add(Jp.shR, [0.05, -0.30, 0.25]) });
     this.parent.evaluate(bodyPrims(Jp, Pp, 'bun'), placeP);
     this.child.evaluate(bodyPrims(Jc, Pc, 'tail'), placeC);
@@ -1335,7 +1349,7 @@ export default class Humans {
     const sgnLen = len;
     this.domeU.uAng.value = ang; this.domeU.uLen.value = -sgnLen;
     this.domeU.uGain.value = 0.30 * (1 - 0.35 * smoothstep(0, 2.5, len));
-    this.trailU.uGain.value = 0.85;
+    this.trailU.uGain.value = 0.85 * (1 - 0.3 * smoothstep(1.0, 6.2, len));
     this.domeU.uLowMix.value = smoothstep(0.0, 0.12, len);
     this.starU.uRot.value.setFromMatrix4(new THREE.Matrix4().makeRotationAxis(this.pole, ang));
     this.starU.uTime.value = T;
@@ -1369,6 +1383,7 @@ export default class Humans {
       P.uDisStart.value = 3.0; P.uDisSpan.value = 2.6; P.uDisMode.value = 0;
       C.uDisStart.value = 9.5; C.uDisSpan.value = 2.4; C.uDisMode.value = 1;
       C.uCenter.value.set(pose.placeC.x, pose.placeC.y + 0.4, pose.placeC.z);
+      C.uCamPos.value.copy(this.camWide.position);
       // heartbeat: 72 → 40 bpm until t = 9, then stillness
       if (tc < 9) {
         const ph = (72 * tc - 16 * tc * tc / 9) / 60;

@@ -174,6 +174,7 @@
     { "t": 80.0,  "type": "acquire",   "zh": "追蹤中",   "en": "TRACKING",          "label": "¹²C #0001" },
     { "t": 121.6, "type": "release" },
     { "t": 133.0, "type": "acquire",   "zh": "位置：最初的細胞", "en": "LOCATED · FIRST CELL", "label": "¹²C #0001" },
+    { "t": 139.0, "type": "status",    "zh": "追蹤中 · 演化", "en": "TRACKING · LINEAGE" },
     { "t": 151.8, "type": "release" },
     { "t": 167.0, "type": "acquire",   "zh": "位置：一個孩子的手", "en": "LOCATED · A CHILD'S HAND", "label": "¹²C #0001" },
     { "t": 176.8, "type": "release" },
