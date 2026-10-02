@@ -1,5 +1,6 @@
 // Cinematic post-processing pipeline.
-// HDR scene -> (dissolve blend) -> bloom mip chain + anamorphic streak -> grade/composite -> screen.
+// Sub-frames are combined into an HDR accumulation buffer (motion blur + AA), then:
+// bloom mip chain + halation + anamorphic streak -> ACES grade -> grain/vignette -> overlay -> screen.
 import * as THREE from '../vendor/three.module.js';
 
 const VERT = /* glsl */`
@@ -8,10 +9,11 @@ void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
 const DEFAULTS = {
   exposure: 1.0,
-  bloomStrength: 0.6, bloomThreshold: 0.9, bloomKnee: 0.6, bloomRadius: 0.85,
-  streak: 0.15, streakTint: [0.55, 0.75, 1.0],
-  ca: 0.0018, vignette: 0.35, grain: 0.045,
-  saturation: 1.0, contrast: 1.0, tint: [1, 1, 1], lift: [0, 0, 0],
+  bloomStrength: 0.45, bloomThreshold: 1.0, bloomKnee: 0.7, bloomRadius: 0.8,
+  halation: 0.05,
+  streak: 0.05, streakTint: [0.55, 0.75, 1.0],
+  ca: 0.0010, vignette: 0.32, grain: 0.022,
+  saturation: 1.0, contrast: 1.0, tint: [1, 1, 1], lift: [0.0012, 0.0016, 0.0024],
   flash: 0.0, fade: 0.0, shake: 0.0,
 };
 export const POST_DEFAULTS = DEFAULTS;
@@ -22,7 +24,7 @@ export class Post {
     const rtOpts = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true };
     this.hdrA = new THREE.WebGLRenderTarget(W, H, rtOpts);
     this.hdrB = new THREE.WebGLRenderTarget(W, H, rtOpts);
-    this.hdrMix = new THREE.WebGLRenderTarget(W, H, { ...rtOpts, depthBuffer: false });
+    this.accum = new THREE.WebGLRenderTarget(W, H, { ...rtOpts, depthBuffer: false });
     const mk = (w, h) => new THREE.WebGLRenderTarget(Math.max(2, w | 0), Math.max(2, h | 0), { ...rtOpts, depthBuffer: false });
     this.mips = []; this.ups = [];
     let w = W / 2, h = H / 2;
@@ -34,12 +36,22 @@ export class Post {
     this.quad.frustumCulled = false;
     this.qscene = new THREE.Scene(); this.qscene.add(this.quad);
 
-    const m = (frag, uniforms) => new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false });
+    const m = (frag, uniforms, extra = {}) => new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false, ...extra });
 
-    this.mBlend = m(/* glsl */`
-      uniform sampler2D tA, tB; uniform float mixAmt, expA, expB; varying vec2 vUv;
-      void main(){ gl_FragColor = vec4(mix(texture2D(tA,vUv).rgb*expA, texture2D(tB,vUv).rgb*expB, mixAmt), 1.0); }`,
-      { tA: { value: null }, tB: { value: null }, mixAmt: { value: 0 }, expA: { value: 1 }, expB: { value: 1 } });
+    // Combine one sub-frame (optionally a dissolve of two shots, each possibly split L/R with its own exposure)
+    // into the accumulation buffer with additive blending.
+    this.mCombine = m(/* glsl */`
+      uniform sampler2D tA, tB; uniform float useB, k, weight, seamA, seamB;
+      uniform vec2 expA, expB; varying vec2 vUv;
+      void main(){
+        vec3 a = texture2D(tA, vUv).rgb * (vUv.x < seamA ? expA.x : expA.y);
+        vec3 c = a;
+        if (useB > 0.5) { vec3 b = texture2D(tB, vUv).rgb * (vUv.x < seamB ? expB.x : expB.y); c = mix(b, a, k); }
+        gl_FragColor = vec4(c * weight, 1.0);
+      }`, {
+        tA: { value: null }, tB: { value: null }, useB: { value: 0 }, k: { value: 1 }, weight: { value: 1 },
+        seamA: { value: 2 }, seamB: { value: 2 }, expA: { value: new THREE.Vector2(1, 1) }, expB: { value: new THREE.Vector2(1, 1) },
+      }, { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation, transparent: true });
 
     const down13 = /* glsl */`
       vec3 down13(sampler2D t, vec2 uv, vec2 px){
@@ -50,14 +62,14 @@ export class Post {
         return e*0.125 + (a+c+g+i)*0.03125 + (b+d+f+h)*0.0625 + (j+k+l+mm)*0.125;
       }`;
     this.mPrefilter = m(down13 + /* glsl */`
-      uniform sampler2D tSrc; uniform vec2 px; uniform float threshold, knee, expo; varying vec2 vUv;
+      uniform sampler2D tSrc; uniform vec2 px; uniform float threshold, knee; varying vec2 vUv;
       void main(){
-        vec3 c = min(down13(tSrc, vUv, px) * expo, vec3(64.0));
+        vec3 c = min(down13(tSrc, vUv, px), vec3(64.0));
         float br = max(c.r, max(c.g, c.b));
         float rq = clamp(br - threshold + knee, 0.0, 2.0*knee); rq = rq*rq/(4.0*knee+1e-4);
         float w = max(rq, br - threshold) / max(br, 1e-4);
         gl_FragColor = vec4(c * w, 1.0);
-      }`, { tSrc: { value: null }, px: { value: new THREE.Vector2() }, threshold: { value: 1 }, knee: { value: 0.5 }, expo: { value: 1 } });
+      }`, { tSrc: { value: null }, px: { value: new THREE.Vector2() }, threshold: { value: 1 }, knee: { value: 0.5 } });
     this.mDown = m(down13 + /* glsl */`
       uniform sampler2D tSrc; uniform vec2 px; varying vec2 vUv;
       void main(){ gl_FragColor = vec4(down13(tSrc, vUv, px), 1.0); }`,
@@ -79,8 +91,8 @@ export class Post {
       }`, { tSrc: { value: null }, px: { value: new THREE.Vector2() }, stepSize: { value: 1 } });
 
     this.mFinal = m(/* glsl */`
-      uniform sampler2D tHDR, tBloom, tStreak, tOverlay;
-      uniform vec2 res; uniform float expo, bloomStrength, streak, ca, vignette, grain, frame;
+      uniform sampler2D tHDR, tBloom, tWide, tStreak, tOverlay;
+      uniform vec2 res; uniform float bloomStrength, halation, streak, ca, vignette, grain, frame;
       uniform float saturation, contrast, flash, fade, overlayOn;
       uniform vec3 streakTint, tint, lift;
       varying vec2 vUv;
@@ -90,13 +102,14 @@ export class Post {
       void main(){
         vec2 uv = vUv; vec2 cc = uv - 0.5; cc.x *= res.x/res.y;
         float r2 = dot(cc, cc);
-        vec2 dir = (uv - 0.5) * ca * (0.4 + 2.5*r2);
+        vec2 dir = (uv - 0.5) * ca * (0.2 + 2.5*r2);
         vec3 col;
         col.r = texture2D(tHDR, uv + dir).r;
         col.g = texture2D(tHDR, uv).g;
         col.b = texture2D(tHDR, uv - dir).b;
-        col *= expo;
-        col += texture2D(tBloom, uv).rgb * bloomStrength;
+        vec3 bloom = texture2D(tBloom, uv).rgb;
+        col += bloom * bloomStrength;
+        col += texture2D(tWide, uv).rgb * vec3(1.0, 0.42, 0.22) * halation;
         col += texture2D(tStreak, uv).rgb * streakTint * streak;
         col *= tint; col += lift;
         col += vec3(flash);
@@ -104,19 +117,18 @@ export class Post {
         float l = dot(col, vec3(0.2126,0.7152,0.0722));
         col = mix(vec3(l), col, saturation);
         col = clamp((col - 0.5)*contrast + 0.5, 0.0, 1.0);
-        col *= mix(1.0, smoothstep(1.25, 0.15, length(cc)*1.05), vignette);
+        col *= mix(1.0, smoothstep(1.3, 0.2, length(cc)*1.05), vignette);
         col = toSRGB(col);
-        // film grain, luminance-weighted, also acts as dither against banding
         float g = h12(uv*res + vec2(frame*13.7, frame*7.3)) + h12(uv*res*0.5 + frame*3.1) - 1.0;
-        col += g * grain * (0.35 + 0.65*(1.0-l)) ;
+        col += g * grain * (0.3 + 0.7*(1.0-l));
         col += (h12(uv*res + frame) - 0.5) / 255.0;
         col *= (1.0 - fade);
         vec4 ov = texture2D(tOverlay, uv);
         col = mix(col, ov.rgb, ov.a * overlayOn);
         gl_FragColor = vec4(clamp(col,0.0,1.0), 1.0);
       }`, {
-        tHDR: { value: null }, tBloom: { value: null }, tStreak: { value: null }, tOverlay: { value: null },
-        res: { value: new THREE.Vector2(W, H) }, expo: { value: 1 }, bloomStrength: { value: 0.6 }, streak: { value: 0.1 },
+        tHDR: { value: null }, tBloom: { value: null }, tWide: { value: null }, tStreak: { value: null }, tOverlay: { value: null },
+        res: { value: new THREE.Vector2(W, H) }, bloomStrength: { value: 0.6 }, halation: { value: 0.05 }, streak: { value: 0.1 },
         ca: { value: 0.002 }, vignette: { value: 0.3 }, grain: { value: 0.04 }, frame: { value: 0 },
         saturation: { value: 1 }, contrast: { value: 1 }, flash: { value: 0 }, fade: { value: 0 }, overlayOn: { value: 1 },
         streakTint: { value: new THREE.Vector3(0.55, 0.75, 1) }, tint: { value: new THREE.Vector3(1, 1, 1) }, lift: { value: new THREE.Vector3() },
@@ -129,20 +141,32 @@ export class Post {
     this.r.render(this.qscene, this.cam);
   }
 
-  // Blend two HDR frames for a dissolve. Returns the mixed target, exposure already applied.
-  blend(a, b, mixAmt, expA, expB) {
-    const u = this.mBlend.uniforms;
-    u.tA.value = a.texture; u.tB.value = b.texture; u.mixAmt.value = mixAmt; u.expA.value = expA; u.expB.value = expB;
-    this.pass(this.mBlend, this.hdrMix);
-    return this.hdrMix;
+  clearAccum() {
+    this.r.setRenderTarget(this.accum);
+    this.r.setClearColor(0x000000, 1);
+    this.r.clear(true, false, false);
+  }
+
+  // Add one sub-frame into the accumulation buffer.
+  // a/b: {rt, exp:[L,R], seam}  (seam = 2 when not split); k = dissolve amount toward a.
+  accumulate(a, b, k, weight) {
+    const u = this.mCombine.uniforms;
+    u.tA.value = a.rt.texture; u.expA.value.set(a.exp[0], a.exp[1]); u.seamA.value = a.seam;
+    u.useB.value = b ? 1 : 0;
+    if (b) { u.tB.value = b.rt.texture; u.expB.value.set(b.exp[0], b.exp[1]); u.seamB.value = b.seam; }
+    u.k.value = k; u.weight.value = weight;
+    this.quad.material = this.mCombine;
+    this.r.setRenderTarget(this.accum);
+    this.r.autoClear = false;
+    this.r.render(this.qscene, this.cam);
+    this.r.autoClear = true;
   }
 
   finish(src, p, overlayTex, frame) {
     p = { ...DEFAULTS, ...p };
-    // bloom
     const pf = this.mPrefilter.uniforms;
     pf.tSrc.value = src.texture; pf.px.value.set(1 / this.W, 1 / this.H);
-    pf.threshold.value = p.bloomThreshold; pf.knee.value = p.bloomKnee; pf.expo.value = p.exposure;
+    pf.threshold.value = p.bloomThreshold; pf.knee.value = p.bloomKnee;
     this.pass(this.mPrefilter, this.mips[0]);
     for (let i = 1; i < this.mips.length; i++) {
       const d = this.mDown.uniforms; const s = this.mips[i - 1];
@@ -155,7 +179,6 @@ export class Post {
       u.tLow.value = low.texture; u.tCur.value = this.mips[i].texture; u.px.value.set(1 / low.width, 1 / low.height); u.radius.value = p.bloomRadius;
       this.pass(this.mUp, this.ups[i]); low = this.ups[i];
     }
-    // anamorphic streak from the 1/4 mip
     let sSrc = this.mips[1];
     const st = this.mStreak.uniforms;
     const steps = [1, 3, 9];
@@ -164,10 +187,10 @@ export class Post {
       st.tSrc.value = sSrc.texture; st.px.value.set(1 / ping.width, 1 / ping.height); st.stepSize.value = steps[i];
       this.pass(this.mStreak, ping); sSrc = ping; [ping, pong] = [pong, ping];
     }
-    // final
     const f = this.mFinal.uniforms;
-    f.tHDR.value = src.texture; f.tBloom.value = this.ups[0].texture; f.tStreak.value = sSrc.texture; f.tOverlay.value = overlayTex;
-    f.expo.value = p.exposure; f.bloomStrength.value = p.bloomStrength; f.streak.value = p.streak;
+    f.tHDR.value = src.texture; f.tBloom.value = this.ups[0].texture; f.tWide.value = this.ups[2].texture;
+    f.tStreak.value = sSrc.texture; f.tOverlay.value = overlayTex;
+    f.bloomStrength.value = p.bloomStrength; f.halation.value = p.halation; f.streak.value = p.streak;
     f.ca.value = p.ca; f.vignette.value = p.vignette; f.grain.value = p.grain; f.frame.value = frame % 997;
     f.saturation.value = p.saturation; f.contrast.value = p.contrast; f.flash.value = p.flash; f.fade.value = p.fade;
     f.streakTint.value.fromArray(p.streakTint); f.tint.value.fromArray(p.tint); f.lift.value.fromArray(p.lift);

@@ -19,6 +19,7 @@ const flag = (k) => args.includes('--' + k);
 const scale = parseFloat(opt('scale', cmd === 'video' ? '1' : '0.5'));
 const W = Math.round(TL.width * scale), H = Math.round(TL.height * scale);
 const PORT = 8700 + Math.floor(Math.random() * 200);
+const SAMPLES = opt('samples', cmd === 'video' ? null : '1');
 
 function chromePath() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
@@ -41,7 +42,7 @@ async function openPage() {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[page ${m.type()}]`, m.text()); });
   page.on('pageerror', e => console.log('[page exception]', e.message));
-  await page.goto(`http://127.0.0.1:${PORT}/film/index.html?scale=${scale}`);
+  await page.goto(`http://127.0.0.1:${PORT}/film/index.html?scale=${scale}${SAMPLES ? `&samples=${SAMPLES}` : ''}`);
   await page.waitForFunction(() => window.FILM && window.FILM.ready, null, { timeout: 120000 });
   return { browser, page };
 }

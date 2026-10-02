@@ -1,28 +1,44 @@
-// 2D overlay layer: observation HUD, tracking reticle, title cards, boot sequence.
+// 2D overlay: chat interface, trace reticles + distance line, minimal HUD, split seam, cards, title.
 // Everything is a pure function of global time T, drawn in a 1920x804 design space.
 import { clamp, lerp, smoothstep, envelope, easeOutBack, easeOutCubic, easeInOutCubic } from './lib/ease.js';
 import { hash1 } from './lib/random.js';
+import { CSS } from './look/palette.js';
 
 const BW = 1920, BH = 804, M = 56;
-const C_HUD = (a) => `rgba(236,232,222,${a})`;
-const C_DIM = (a) => `rgba(236,232,222,${a * 0.55})`;
-const C_AMBER = (a) => `rgba(255,192,118,${a})`;
-const C_RED = (a) => `rgba(255,78,62,${a})`;
-const C_GOLD = (a) => `rgba(255,224,160,${a})`;
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+const WHITE = a => rgba(CSS.line, a);
+const COL = { c: CSS.c, si: CSS.si };
 const MONO = (w, px) => `${w} ${px}px JBMono, NotoSansTC`;
 const SANS = (w, px) => `${w} ${px}px NotoSansTC`;
 const SERIF = (w, px) => `${w} ${px}px NotoSerifTC`;
-const CORM = (w, px) => `${w} ${px}px Cormorant`;
 const CORMI = (w, px) => `italic ${w} ${px}px CormorantItalic`;
 const CINZEL = (w, px) => `${w} ${px}px Cinzel`;
-const SCRAMBLE = '01#%&*+=<>/\\|ΔΣΩ∞ABCDEFXYZ';
 
+const inAny = (T, ranges) => (ranges || []).some(([a, b]) => T >= a && T <= b);
+const rangeAlpha = (T, ranges, f = 0.4) => { for (const [a, b] of ranges || []) if (T >= a - f && T <= b + f) return envelope(T, a - 0.001, b, f, f); return 0; };
 function sup(n) { const m = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' }; return String(n).split('').map(c => m[c] ?? c).join(''); }
-function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
-function timecode(T, fps) { const f = Math.floor(T * fps + 1e-6); const s = Math.floor(f / fps); const p = (x) => String(x).padStart(2, '0'); return `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}:${p(f % fps)}`; }
-function scramble(str, k, seed) { // k=1 fully scrambled, 0 clean
-  if (k <= 0) return str;
-  return str.split('').map((c, i) => (c === ' ' || hash1(i * 7.1 + seed) > k) ? c : SCRAMBLE[Math.floor(hash1(i * 3.3 + seed * 1.7) * SCRAMBLE.length)]).join('');
+const fmtInt = n => Math.round(n).toLocaleString('en-US');
+
+// keyframe interpolation; log-space when both values are positive and far apart
+function keyInterp(keys, T, log = true) {
+  if (T <= keys[0][0]) return keys[0][1];
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, v0] = keys[i], [t1, v1] = keys[i + 1];
+    if (T <= t1) {
+      const k = easeInOutCubic(clamp((T - t0) / Math.max(t1 - t0, 1e-6)));
+      if (log && v0 > 0 && v1 > 0) return Math.exp(lerp(Math.log(v0), Math.log(v1), k));
+      return lerp(v0, v1, k);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+function fmtDist(d) {
+  if (d <= 0.00005) return '0.0 mm';
+  if (d < 0.01) return `${(d * 1000).toFixed(1)} mm`;
+  if (d < 1) return `${(d * 100).toFixed(1)} cm`;
+  if (d < 1000) return `${d.toFixed(1)} m`;
+  if (d < 1e14) return `${fmtInt(d / 1000)} km`;
+  return `${(d / 9.4607e15).toFixed(1)} 光年 · LY`;
 }
 
 export class Overlay {
@@ -31,319 +47,362 @@ export class Overlay {
     this.canvas = document.createElement('canvas');
     this.canvas.width = width; this.canvas.height = height;
     this.g = this.canvas.getContext('2d');
-    this.buf = document.createElement('canvas'); this.buf.width = width; this.buf.height = height;
-    this.bg = this.buf.getContext('2d');
     this.s = width / BW;
-    this.reticleEvents = [...(timeline.reticle || [])].sort((a, b) => a.t - b.t);
+    this.trace = [...(timeline.trace || [])].sort((a, b) => a.t - b.t);
+    this.firstSplit = (timeline.shots.find(s => s.split) || {}).start;
   }
 
-  // info: { T, shot, lt, frame, reticle: {x,y,on} | null }  (x,y in design px)
   draw(info) {
-    const g = this.g; const { T, shot, lt } = info;
+    const g = this.g;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, this.W, this.H);
     g.setTransform(this.s, 0, 0, this.s, 0, 0);
     g.textBaseline = 'alphabetic';
-    if (shot.scene === 'boot') this.drawBoot(lt, info.frame);
-    if (shot.hud && shot.hud.visible > 0) this.drawHUD(shot, lt, T, info.frame);
-    this.drawReticle(T, info.reticle, info.frame);
-    for (const c of this.tl.cards) if (T >= c.start - 0.01 && T <= c.end + 0.01) this.drawCard(c, T);
+    const { T, shot } = info;
+    if (shot.split) this.drawSeam(T, shot);
+    this.drawHUD(T);
+    this.drawChat(T);
+    this.drawTrace(T, info.targets || {});
+    for (const c of this.tl.cards || []) if (T >= c.start - 0.01 && T <= c.end + 0.01) this.drawCard(c, T);
     return this.canvas;
   }
 
-  // ---------- helpers ----------
-  text(str, x, y, font, color, { align = 'left', ls = 0, blur = 0, shadow = null, glow = null } = {}) {
+  // ---------------------------------------------------------------- helpers
+  text(str, x, y, font, color, { align = 'left', ls = 0, shadow = 0 } = {}) {
     const g = this.g;
     g.font = font; g.fillStyle = color; g.textAlign = align; g.letterSpacing = `${ls}px`;
-    g.filter = blur > 0.05 ? `blur(${blur * this.s}px)` : 'none';
-    // letterSpacing adds trailing space after the last glyph; compensate for centred text
+    if (shadow) { g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = shadow * this.s; } else { g.shadowColor = 'transparent'; g.shadowBlur = 0; }
     const dx = align === 'center' ? ls / 2 : align === 'right' ? ls : 0;
-    if (glow) { g.shadowColor = glow.color; g.shadowBlur = glow.blur * this.s; g.fillText(str, x + dx, y); }
-    if (shadow) { g.shadowColor = shadow.color; g.shadowBlur = shadow.blur * this.s; }
-    else g.shadowColor = 'transparent';
     g.fillText(str, x + dx, y);
-    g.shadowColor = 'transparent'; g.shadowBlur = 0; g.filter = 'none'; g.letterSpacing = '0px';
+    g.shadowColor = 'transparent'; g.shadowBlur = 0; g.letterSpacing = '0px';
   }
-  line(x1, y1, x2, y2, color, w = 1) { const g = this.g; g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+  width(str, font, ls = 0) { const g = this.g; g.font = font; g.letterSpacing = `${ls}px`; const w = g.measureText(str).width; g.letterSpacing = '0px'; return w; }
+  line(x1, y1, x2, y2, color, w = 1, dash = null) {
+    const g = this.g; g.strokeStyle = color; g.lineWidth = w; g.setLineDash(dash || []);
+    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.setLineDash([]);
+  }
 
-  // ---------- HUD ----------
-  drawHUD(shot, lt, T, frame) {
-    const h = shot.hud, dur = shot.end - shot.start;
-    // power-on flicker at each shot start
-    const on = smoothstep(0.05, 0.55, lt);
-    const flick = lt < 0.5 ? (hash1(Math.floor(lt * 24) * 9.1 + shot.start) > 0.35 ? 1 : 0.25) : 1;
-    let a = h.visible * on * flick;
-    if (h.offAt != null && lt >= h.offAt) { const k = lt - h.offAt; a *= k < 0.25 ? (hash1(Math.floor(k * 24) * 3.7) > 0.5 ? 0.6 : 0.1) : 0; }
-    if (a <= 0.001) return;
-    const scr = clamp(1 - lt / 0.6); // value scramble on lock-in
-    const seed = Math.floor(T * 24);
+  // ---------------------------------------------------------------- split seam
+  drawSeam(T, shot) {
+    const x = (this.tl.split?.seam ?? 0.5) * BW;
+    let a = 0.5;
+    const sf = shot.split.seamFade; if (sf) a *= 1 - smoothstep(sf[0], sf[1], T);
+    const grow = this.firstSplit != null ? easeInOutCubic(clamp((T - this.firstSplit) / 1.4)) : 1;
+    if (a <= 0.002) return;
+    const h = BH * grow;
+    this.line(x, BH / 2 - h / 2, x, BH / 2 + h / 2, WHITE(a), 1);
+    for (let y = 22; y < BH; y += 40) if (Math.abs(y - BH / 2) < h / 2) this.line(x - 3, y, x + 3, y, WHITE(a * 0.4), 1);
+    const la = a * smoothstep(0.6, 1.6, T - (this.firstSplit ?? 0));
+    this.text('你 · YOU', x - 18, 50, MONO(400, 12), rgba(CSS.c, la * 1.6), { align: 'right', ls: 3 });
+    this.text('我 · ME', x + 18, 50, MONO(400, 12), rgba(CSS.si, la * 1.6), { ls: 3 });
+  }
 
+  // ---------------------------------------------------------------- HUD
+  drawHUD(T) {
+    const h = this.tl.hud; if (!h) return;
+    const a = rangeAlpha(T, h.show, 0.35);
+    if (a <= 0.002) return;
+    const boot = h.boot || [0, 0];
+    const bk = clamp((T - boot[0]) / (boot[1] - boot[0]));
     // viewfinder corners
-    const cl = 18, ci = 28;
+    const cl = 16, ci = 28, ca = 0.28 * a * smoothstep(0, 0.4, bk);
     for (const [x, y, sx, sy] of [[ci, ci, 1, 1], [BW - ci, ci, -1, 1], [ci, BH - ci, 1, -1], [BW - ci, BH - ci, -1, -1]]) {
-      this.line(x, y, x + cl * sx, y, C_HUD(0.35 * a)); this.line(x, y, x, y + cl * sy, C_HUD(0.35 * a));
+      this.line(x, y, x + cl * sx, y, WHITE(ca)); this.line(x, y, x, y + cl * sy, WHITE(ca));
     }
-    // top-left: log id + timecode
-    const blink = (Math.floor(T * 2) % 2 === 0) ? 1 : 0.25;
-    this.g.fillStyle = C_RED(0.9 * a * blink); this.g.beginPath(); this.g.arc(M + 4, M - 4.5, 3.6, 0, Math.PI * 2); this.g.fill();
-    this.text('REC', M + 14, M, MONO(400, 12), C_HUD(0.8 * a), { ls: 2 });
-    this.text('OBS-LOG  ¹²C #0001', M + 58, M, MONO(300, 12), C_HUD(0.8 * a), { ls: 2 });
-    this.text(`TC ${timecode(T, this.tl.fps)}`, M, M + 20, MONO(300, 11), C_DIM(a), { ls: 2 });
-    this.line(M, M + 32, M + 230, M + 32, C_HUD(0.25 * a));
-    this.line(M, M + 29, M, M + 35, C_HUD(0.4 * a));
-
-    // top-right: universe age / life age / counters
-    const R = BW - M; const k = clamp(lt / dur);
-    if (h.lifeAge) {
-      const la = h.lifeAge; const kk = easeInOutCubic(clamp(lt / la.endAt));
-      const v = Math.round(lerp(la.from, la.to, kk));
-      this.text(`${la.en} · ${la.zh}`, R, M, MONO(300, 12), C_DIM(a), { align: 'right', ls: 2 });
-      this.text(scramble(`${v} YR`, scr, seed), R, M + 34, MONO(300, 30), C_HUD(0.92 * a), { align: 'right', ls: 1 });
-    } else if (h.age) {
-      const v = lerp(h.age.from, h.age.to, easeInOutCubic(k));
-      this.text('UNIVERSE AGE · 宇宙年齡', R, M, MONO(300, 12), C_DIM(a), { align: 'right', ls: 2 });
-      this.text(scramble(`${v.toFixed(2)} × 10⁹ YR`, scr, seed), R, M + 34, MONO(300, 28), C_HUD(0.92 * a), { align: 'right', ls: 1 });
+    // top-left: trace header + time
+    const head = 'TRACE · 溯源';
+    const n = Math.floor(clamp(bk * 2.2) * head.length);
+    this.g.fillStyle = rgba(CSS.si, 0.9 * a); this.g.beginPath(); this.g.arc(M + 4, M - 4.5, 3.2, 0, Math.PI * 2); this.g.fill();
+    this.text(head.slice(0, n), M + 16, M, MONO(400, 12), WHITE(0.8 * a), { ls: 3 });
+    const la = a * smoothstep(0.45, 0.9, bk);
+    if (la > 0) {
+      const y = keyInterp(h.yearsAgo, T, true);
+      const s = y < 0.5 ? 'NOW · 現在' : `T − ${fmtInt(y)} YR`;
+      this.text(s, M, M + 26, MONO(300, 15), WHITE(0.85 * la), { ls: 2 });
+      this.line(M, M + 40, M + 260 * smoothstep(0.5, 1, bk), M + 40, WHITE(0.22 * la));
     }
-    this.line(R - 230, M + 46, R, M + 46, C_HUD(0.25 * a));
-    if (h.counter) {
-      const c = h.counter; const kk = smoothstep(0.08, 0.95, k);
-      const v = Math.exp(lerp(Math.log(c.from), Math.log(c.to), kk * kk));
-      this.text(`${c.en} · ${c.zh}`, R, M + 70, MONO(300, 12), C_DIM(a), { align: 'right', ls: 2 });
-      this.text(scramble(fmtInt(v), scr, seed + 3), R, M + 96, MONO(300, 22), C_AMBER(0.95 * a), { align: 'right', ls: 1 });
+    if (h.origin && inAny(T, h.origin.show)) {
+      const oa = a * rangeAlpha(T, h.origin.show, 0.25) * (Math.floor(T * 2.4) % 2 === 0 ? 1 : 0.45);
+      this.text(`${h.origin.en} · ${h.origin.zh}`, M, M + 64, MONO(400, 12), rgba(CSS.si, 0.9 * oa), { ls: 3 });
     }
-
-    // bottom-left: scale ruler + temperature
-    const by = BH - M;
-    if (h.scale) {
-      this.text('SCALE · 尺度', M, by - 46, MONO(300, 11), C_DIM(a), { ls: 2 });
-      this.text(scramble(h.scale, scr, seed + 5), M + 120, by - 46, MONO(400, 13), C_HUD(0.9 * a), { ls: 1 });
-      this.line(M, by - 30, M + 200, by - 30, C_HUD(0.6 * a));
-      for (let i = 0; i <= 10; i++) { const x = M + i * 20, tl = i % 5 === 0 ? 8 : 4; this.line(x, by - 30, x, by - 30 - tl, C_HUD(0.6 * a)); }
-    }
-    if (h.temp) {
-      this.text('TEMP · 溫度', M, by, MONO(300, 11), C_DIM(a), { ls: 2 });
-      this.text(scramble(h.temp, scr, seed + 7), M + 120, by, MONO(400, 13), C_HUD(0.9 * a), { ls: 1 });
-    }
-
-    // bottom-right: location
-    if (h.location) {
-      this.text('LOCATION · 位置', R, by - 52, MONO(300, 11), C_DIM(a), { align: 'right', ls: 2 });
-      this.text(h.location.zh, R, by - 22, SANS(300, 21), C_HUD(0.95 * a), { align: 'right', ls: 4 });
-      this.text(scramble(h.location.en, scr, seed + 9), R, by, MONO(300, 11), C_HUD(0.7 * a), { align: 'right', ls: 3 });
-    }
-
-    // warning banner
-    if (h.warn && lt >= h.warn.start) {
-      const wl = lt - h.warn.start;
-      const wb = (Math.floor(wl * 3) % 2 === 0) ? 1 : 0.45;
-      const wa = a * smoothstep(0, 0.2, wl) * wb;
-      const cx = BW / 2, y = M + 10;
-      this.g.strokeStyle = C_RED(0.8 * wa); this.g.lineWidth = 1; this.g.strokeRect(cx - 230, y - 22, 460, 48);
-      this.g.fillStyle = C_RED(0.10 * wa); this.g.fillRect(cx - 230, y - 22, 460, 48);
-      this.text(`▲  ${h.warn.en}`, cx, y - 1, MONO(500, 13), C_RED(wa), { align: 'center', ls: 3 });
-      let sub = h.warn.zh;
-      if (h.warn.countdownTo != null) { const rem = Math.max(0, h.warn.countdownTo - lt); sub += `   T−${rem.toFixed(2).padStart(5, '0')} s`; }
-      this.text(sub, cx, y + 18, MONO(300, 12), C_RED(0.85 * wa), { align: 'center', ls: 3 });
+    // bottom-left: scale ruler
+    if (h.scale && inAny(T, h.scale.show.map(([x, y]) => [x - 0.4, y + 0.4]))) {
+      const sa = a * rangeAlpha(T, h.scale.show, 0.4);
+      const e = keyInterp(h.scale.keys, T, false);
+      const ei = Math.round(e), frac = e - Math.floor(e);
+      const by = BH - M;
+      this.text('SCALE · 尺度', M, by - 30, MONO(300, 11), WHITE(0.55 * sa), { ls: 2 });
+      this.text(`10${sup(ei)} m`, M + 118, by - 30, MONO(400, 13), WHITE(0.9 * sa), { ls: 1 });
+      this.line(M, by - 12, M + 200, by - 12, WHITE(0.5 * sa));
+      for (let i = 0; i <= 20; i++) {
+        const x = M + ((i * 10 + frac * 100) % 200);
+        this.line(x, by - 12, x, by - 12 - (i % 5 === 0 ? 7 : 3), WHITE(0.45 * sa));
+      }
     }
   }
 
-  // ---------- reticle ----------
-  reticleState(T) {
-    let cur = null, status = null;
-    for (const e of this.reticleEvents) {
-      if (e.t > T) break;
-      if (e.type === 'status') status = e; else { cur = e; status = null; }
+  // ---------------------------------------------------------------- chat
+  msgState(m, T) {
+    let text = '', caret = null, sentAt = null, lastKey = -1, typeStart = null;
+    for (const op of m.ops) {
+      const [kind, t0] = op;
+      if (kind === 'caret') { if (T >= t0) caret = t0; }
+      else if (kind === 'type') {
+        const str = [...op[2]], d = op[3];
+        let ti = t0;
+        if (typeStart == null) typeStart = t0;
+        for (let i = 0; i < str.length; i++) {
+          if (i > 0) ti += Array.isArray(d) ? (d[i] ?? d[d.length - 1]) : d;
+          if (T >= ti) { text += str[i]; lastKey = ti; }
+        }
+      } else if (kind === 'del') {
+        for (let i = 0; i < op[2]; i++) { const ti = t0 + i * op[3]; if (T >= ti) { text = [...text].slice(0, -1).join(''); lastKey = ti; } }
+      } else if (kind === 'send') { if (T >= t0) sentAt = t0; }
+      else if (kind === 'sent') { if (T >= t0) { text = op[2]; sentAt = -1e9; } }
     }
-    return { cur, status };
+    return { text, caret, sentAt, lastKey, typeStart };
   }
 
-  drawReticle(T, pos, frame) {
-    const { cur, status } = this.reticleState(T);
-    if (!cur) return;
-    const dt = T - cur.t;
-    let next = this.reticleEvents.find(e => e.t > cur.t && e.type !== 'status');
-    if (cur.type === 'release') return;
-    if (!pos || !pos.on) { if (cur.type !== 'lost') return; pos = this._lastPos || { x: BW / 2, y: BH / 2, on: true }; }
-    this._lastPos = pos;
-    const g = this.g; const { x, y } = pos;
-    // fade out ahead of a release
-    let a = 1;
-    if (next && next.type === 'release') a *= 1 - smoothstep(next.t - 0.3, next.t, T);
-    if (cur.type === 'lost') {
-      const lostA = (1 - smoothstep(2.6, 3.4, dt)) * ((Math.floor(dt * 5) % 2 === 0) ? 1 : 0.35);
-      const jit = 6 * (1 - smoothstep(0, 2.5, dt));
-      const jx = (hash1(frame * 1.3) - 0.5) * jit, jy = (hash1(frame * 2.7) - 0.5) * jit;
-      const sz = 26 + dt * 16;
-      this.brackets(x + jx, y + jy, sz, 0, C_RED(0.9 * lostA));
-      this.text(`✕  ${cur.en}`, x, y - sz - 22, MONO(500, 13), C_RED(lostA), { align: 'center', ls: 4 });
-      this.text(cur.zh, x, y - sz - 4, SANS(400, 13), C_RED(0.85 * lostA), { align: 'center', ls: 4 });
+  drawChat(T) {
+    const msgs = this.tl.chat?.messages || [];
+    // which AI/human message currently owns the caret: the latest started one of each role
+    const startOf = m => Math.min(...m.ops.map(o => o[1]));
+    for (const m of msgs) {
+      const [s0, s1] = m.show;
+      if (T < s0 - 0.01 || T > s1 + 0.01) continue;
+      const vis = envelope(T, s0, s1, 0.35, 0.25);
+      const st = this.msgState(m, T);
+      const later = msgs.some(o => o !== m && o.role === m.role && startOf(o) > startOf(m) && T >= startOf(o));
+      const human = m.role === 'human';
+      const font = human ? SANS(300, 34) : SERIF(300, 32);
+      const col = human ? CSS.humanText : CSS.aiText;
+      const caretCol = human ? CSS.c : CSS.si;
+      let y, alpha = vis * (m.dim ?? 1);
+      let lineA = 0;
+      if (human) {
+        const inY = m.slot.input ?? m.slot.sent, sentY = m.slot.sent ?? inY;
+        if (st.sentAt != null) {
+          const k = easeOutCubic(clamp((T - st.sentAt) / 0.55));
+          y = lerp(inY, sentY, k); alpha *= lerp(1, 0.78, k); lineA = 1 - clamp((T - st.sentAt) / 0.3);
+        } else { y = inY; lineA = 1; }
+      } else y = m.slot.line;
+
+      // period → reticle: everything but the final 。 fades; the 。 grows into a ring and flies to centre
+      let pr = null;
+      if (m.periodToReticle) {
+        const [pa, pb] = m.periodToReticle;
+        if (T >= pa) { pr = clamp((T - pa) / (pb - pa)); alpha *= 1 - smoothstep(0, 0.55, pr); }
+      }
+      // input underline
+      if (human && lineA > 0) {
+        const w = 300 * easeOutCubic(clamp((T - s0) / 0.6));
+        this.line(BW / 2 - w, y + 22, BW / 2 + w, y + 22, WHITE(0.22 * lineA * vis));
+      }
+      const txt = st.text;
+      const tw = this.width(txt, font, 4);
+      const x0 = BW / 2 - tw / 2;
+      if (txt && alpha > 0.002) this.text(txt, BW / 2, y, font, rgba(col, alpha), { align: 'center', ls: 4 });
+      // caret
+      if (st.caret != null && st.sentAt == null && !later && !pr) {
+        const typing = T - st.lastKey < 0.45;
+        const blink = typing || ((T - st.caret) % 1.06) < 0.53;
+        if (blink) { this.g.fillStyle = rgba(caretCol, 0.95 * vis); this.g.fillRect(BW / 2 + tw / 2 + 6, y - 30, 2, 38); }
+      }
+      // english line (crossfades on change)
+      if (m.en && m.en.length) {
+        let cur = null, prev = null;
+        for (const e of m.en) if (T >= e[0]) { prev = cur; cur = e; }
+        if (cur) {
+          const k = clamp((T - cur[0]) / 0.3);
+          const enY = y + 40;
+          if (prev && prev[1] && k < 1) this.text(prev[1], BW / 2, enY, CORMI(400, 23), rgba(col, 0.62 * alpha * (1 - k)), { align: 'center', ls: 1 });
+          if (cur[1]) this.text(cur[1], BW / 2, enY, CORMI(400, 23), rgba(col, 0.62 * alpha * k), { align: 'center', ls: 1 });
+        }
+      }
+      if (pr != null && pr < 1) {
+        const last = [...txt].slice(-1)[0];
+        const wb = this.width([...txt].slice(0, -1).join(''), font, 4);
+        const gx = x0 + wb + 16, gy = y - 7;
+        const k = easeInOutCubic(pr);
+        const cx = lerp(gx, BW / 2, k), cy = lerp(gy, BH / 2, k), r = lerp(5, 36, k);
+        this.g.strokeStyle = rgba(CSS.si, 0.95 * vis); this.g.lineWidth = lerp(2.2, 1.4, k);
+        this.g.beginPath(); this.g.arc(cx, cy, r, 0, Math.PI * 2); this.g.stroke();
+        if (last !== '。') { /* nothing */ }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- trace
+  traceState(name, T) {
+    let cur = null;
+    for (const e of this.trace) { if (e.t > T) break; if (e.target === name) cur = e; }
+    return cur;
+  }
+
+  drawTrace(T, targets) {
+    const defs = this.tl.targets || {};
+    const pos = {};
+    for (const name of Object.keys(defs)) {
+      const st = this.traceState(name, T);
+      if (!st) continue;
+      const dt = T - st.t;
+      const def = defs[name];
+      const color = COL[def.color] || CSS.line;
+      let p = targets[name];
+      if (st.type === 'seek' || st.type === 'rewind') p = p && p.on ? p : { x: BW / 2, y: BH / 2, on: true };
+      if (!p || !p.on) continue;
+      if (st.type === 'release') {
+        const a = 1 - clamp(dt / 0.45); if (a <= 0) continue;
+        this.reticle(p.x, p.y, color, 1, a, null);
+        continue;
+      }
+      if (st.type === 'merge') { pos[name] = { ...p, merge: dt }; continue; }
+      pos[name] = p;
+      if (st.type === 'seek') {
+        const a = smoothstep(0, 0.3, dt);
+        const g = this.g; g.save(); g.translate(p.x, p.y); g.rotate(T * 0.6);
+        g.strokeStyle = rgba(color, 0.9 * a); g.lineWidth = 1.4; g.beginPath(); g.arc(0, 0, 36 + 2 * Math.sin(T * 3), 0, Math.PI * 2); g.stroke();
+        for (let i = 0; i < 4; i++) { g.rotate(Math.PI / 2); this.line(0, -44, 0, -52, rgba(color, 0.8 * a), 1.2); }
+        g.restore();
+        this.text('SEARCHING · 搜尋中', p.x, p.y + 70, MONO(300, 10), rgba(color, 0.6 * a), { align: 'center', ls: 3 });
+        continue;
+      }
+      const lock = clamp(dt / 0.6);
+      const sc = st.type === 'rewind' ? 1 + 0.06 * Math.sin(T * 40) : lerp(2.2, 1, easeOutBack(lock, 1.3));
+      const label = st.type === 'rewind' ? { code: def.code, zh: '回溯中', en: 'REWINDING' } : { code: def.code, zh: def.zh, en: def.en };
+      this.reticle(p.x, p.y, color, sc, smoothstep(0, 0.15, dt), label, smoothstep(0.25, 0.7, dt), p.half);
+    }
+    // merged contact reticle
+    if (pos.C && pos.Si && pos.C.merge != null) {
+      const k = easeInOutCubic(clamp(pos.C.merge / 1.2));
+      const mx = (pos.C.x + pos.Si.x) / 2, my = (pos.C.y + pos.Si.y) / 2;
+      if (k < 1) {
+        this.reticle(lerp(pos.C.x, mx, k), lerp(pos.C.y, my, k), CSS.c, 1, 1 - k, null);
+        this.reticle(lerp(pos.Si.x, mx, k), lerp(pos.Si.y, my, k), CSS.si, 1, 1 - k, null);
+      }
+      this.reticle(mx, my, '#FFFFFF', lerp(1.3, 1.0, k), k, { code: 'C · Si', zh: '接觸', en: 'CONTACT' }, smoothstep(0.3, 1, k));
       return;
     }
-    const lock = clamp(dt / 0.7);
-    const sc = lerp(3.0, 1.0, easeOutBack(lock, 1.4));
-    const rot = lerp(Math.PI / 4, 0, easeOutCubic(lock));
-    const fl = lock < 1 ? ((Math.floor(dt * 30) % 3 === 0) ? 0.4 : 1) : 1;
-    const breathe = 1 + 0.05 * Math.sin(T * 2.4);
-    const col = cur.type === 'reacquire' ? C_GOLD : C_AMBER;
-    const sz = 22 * sc * breathe;
-    this.brackets(x, y, sz, rot, col(0.95 * a * fl));
-    g.fillStyle = col(a); g.beginPath(); g.arc(x, y, 1.8, 0, Math.PI * 2); g.fill();
-    // pulse rings at lock
-    const rings = cur.type === 'reacquire' ? 3 : 1;
-    for (let i = 0; i < rings; i++) {
-      const rt = dt - i * 0.35; if (rt < 0 || rt > 1.6) continue;
-      const rr = 8 + easeOutCubic(rt / 1.6) * (cur.type === 'reacquire' ? 160 : 70);
-      g.strokeStyle = col(0.6 * (1 - rt / 1.6) * a); g.lineWidth = 1; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.stroke();
+    // distance line
+    const D = this.tl.distance;
+    if (D && pos.C && pos.Si && inAny(T, D.show.map(([a, b]) => [a, b + 0.4]))) {
+      const a = rangeAlpha(T, D.show, 0.4);
+      const d = T >= (D.contactAt ?? 1e9) ? 0 : keyInterp(D.keys, T, true);
+      const x1 = pos.C.x, y1 = pos.C.y, x2 = pos.Si.x, y2 = pos.Si.y;
+      const L = Math.hypot(x2 - x1, y2 - y1);
+      if (L > 60) {
+        const ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+        const g = this.g;
+        const grad = g.createLinearGradient(x1, y1, x2, y2);
+        grad.addColorStop(0, rgba(CSS.c, 0.6 * a)); grad.addColorStop(1, rgba(CSS.si, 0.6 * a));
+        g.strokeStyle = grad; g.lineWidth = 1; g.setLineDash([3, 5]);
+        g.beginPath(); g.moveTo(x1 + ux * 30, y1 + uy * 30); g.lineTo(x2 - ux * 30, y2 - uy * 30); g.stroke(); g.setLineDash([]);
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const off = uy * ux < 0 ? -1 : 1;
+        this.text('DISTANCE · 距離', mx, my - 26, MONO(300, 10), WHITE(0.5 * a), { align: 'center', ls: 3 });
+        this.text(fmtDist(d), mx, my - 8, MONO(400, 14), WHITE(0.92 * a), { align: 'center', ls: 2 });
+      } else {
+        this.text(fmtDist(d), (x1 + x2) / 2, Math.min(y1, y2) - 40, MONO(400, 14), WHITE(0.92 * a), { align: 'center', ls: 2 });
+      }
     }
-    // leader + label
-    const la = a * smoothstep(0.35, 0.8, dt);
-    if (la <= 0) return;
-    const flip = x > BW - 360 ? -1 : 1;
-    const x1 = x + flip * (sz + 4), y1 = y - (sz + 4);
-    const x2 = x1 + flip * 46, y2 = y1 - 46;
-    const len = 210 * easeOutCubic(clamp((dt - 0.35) / 0.5));
-    g.strokeStyle = col(0.7 * la); g.lineWidth = 1; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2 + flip * len, y2); g.stroke();
-    const tx = flip > 0 ? x2 + 4 : x2 - 4, al = flip > 0 ? 'left' : 'right';
-    const lab = cur.label || '¹²C #0001';
-    this.text(scramble(lab, clamp(1 - (dt - 0.4) / 0.5), Math.floor(T * 24)), tx, y2 - 8, MONO(400, 14), col(la), { align: al, ls: 2 });
-    const st = status && (T - status.t) >= 0 ? status : cur;
-    const sa = status ? la * smoothstep(0, 0.6, T - status.t) : la;
-    this.text(st.en, tx, y2 + 18, MONO(300, 11), col(0.85 * sa), { align: al, ls: 3 });
-    this.text(st.zh, tx, y2 + 37, SANS(300, 13), col(0.85 * sa), { align: al, ls: 3 });
   }
 
-  brackets(x, y, s, rot, color) {
-    const g = this.g; const c = s * 0.42;
-    g.save(); g.translate(x, y); g.rotate(rot); g.strokeStyle = color; g.lineWidth = 1.3;
+  reticle(x, y, color, scale, alpha, label, labelA = 1, half) {
+    if (alpha <= 0.002) return;
+    const g = this.g; const s = 20 * scale, c = 8;
+    g.save(); g.translate(x, y); g.strokeStyle = rgba(color, 0.95 * alpha); g.lineWidth = 1.4;
     for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       g.beginPath(); g.moveTo(sx * s, sy * (s - c)); g.lineTo(sx * s, sy * s); g.lineTo(sx * (s - c), sy * s); g.stroke();
     }
+    g.fillStyle = rgba(color, alpha); g.beginPath(); g.arc(0, 0, 1.7, 0, Math.PI * 2); g.fill();
     g.restore();
+    if (!label || labelA <= 0.002) return;
+    const la = alpha * labelA;
+    const limit = half === 'L' ? (this.tl.split?.seam ?? 0.5) * BW : BW;
+    const flip = (x + s + 240 > limit - 12) ? -1 : 1;
+    const x1 = x + flip * (s + 3), y1 = y - (s + 3), x2 = x1 + flip * 26, y2 = y1 - 26;
+    const len = 170 * easeOutCubic(labelA);
+    g.strokeStyle = rgba(color, 0.7 * la); g.lineWidth = 1; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2 + flip * len, y2); g.stroke();
+    const tx = flip > 0 ? x2 + 2 : x2 - 2, al = flip > 0 ? 'left' : 'right';
+    this.text(label.code, tx, y2 - 8, MONO(400, 11), rgba(color, 0.85 * la), { align: al, ls: 2 });
+    const zhW = this.width(label.zh, SANS(300, 22), 2);
+    if (flip > 0) {
+      this.text(label.zh, tx, y2 + 26, SANS(300, 22), rgba(color, la), { ls: 2 });
+      this.text(label.en, tx + zhW + 10, y2 + 25, MONO(400, 11), rgba(color, 0.8 * la), { ls: 3 });
+    } else {
+      const enW = this.width(label.en, MONO(400, 11), 3);
+      this.text(label.en, tx, y2 + 25, MONO(400, 11), rgba(color, 0.8 * la), { align: 'right', ls: 3 });
+      this.text(label.zh, tx - enW - 10, y2 + 26, SANS(300, 22), rgba(color, la), { align: 'right', ls: 2 });
+    }
   }
 
-  // ---------- cards ----------
+  // ---------------------------------------------------------------- cards
   drawCard(c, T) {
     const lt = T - c.start, dur = c.end - c.start;
-    const shadow = { color: 'rgba(0,0,0,0.65)', blur: 22 };
     switch (c.style) {
-      case 'presents': {
-        const a = envelope(T, c.start, c.end, 1.2, 1.0);
-        const ls = lerp(14, 20, lt / dur);
-        this.text(c.en, BW / 2, 400, CINZEL(400, 24), C_HUD(0.9 * a), { align: 'center', ls });
-        this.text(c.zh, BW / 2, 440, SERIF(300, 15), C_HUD(0.55 * a), { align: 'center', ls: 10 });
+      case 'ai': case 'ai-left': case 'ai-right': {
+        const x = c.style === 'ai-left' ? BW * 0.25 : c.style === 'ai-right' ? BW * 0.75 : BW / 2;
+        const a = envelope(T, c.start, c.end, 1.1, 1.0);
+        const rise = (1 - easeOutCubic(clamp(lt / 1.4))) * 8;
+        const two = !!c.zh2;
+        const y0 = two ? 612 : 652;
+        this.text(c.zh, x, y0 + rise, SERIF(300, two ? 28 : 30), rgba(CSS.aiText, 0.96 * a), { align: 'center', ls: 6, shadow: 14 });
+        this.text(c.en, x, y0 + 36 + rise, CORMI(400, 23), rgba(CSS.aiText, 0.72 * a), { align: 'center', ls: 1, shadow: 10 });
+        if (two) {
+          const t2 = c.start + dur * 0.42;
+          const a2 = envelope(T, t2, c.end, 1.0, 1.0);
+          const r2 = (1 - easeOutCubic(clamp((T - t2) / 1.4))) * 8;
+          this.text(c.zh2, x, y0 + 88 + r2, SERIF(300, 28), rgba(CSS.aiText, 0.96 * a2), { align: 'center', ls: 6, shadow: 14 });
+          this.text(c.en2, x, y0 + 124 + r2, CORMI(400, 23), rgba(CSS.aiText, 0.72 * a2), { align: 'center', ls: 1, shadow: 10 });
+        }
         break;
       }
-      case 'location': {
-        const a = envelope(T, c.start, c.end, 0.3, 1.2);
-        const nz = Math.floor(clamp(lt / 1.0) * c.zh.length), ne = Math.floor(clamp((lt - 0.4) / 1.2) * c.en.length);
-        const cur = (Math.floor(lt * 3) % 2 === 0 && lt < 2.2) ? '▍' : '';
-        this.text(c.zh.slice(0, nz), M, 600, SERIF(300, 30), C_HUD(0.95 * a), { ls: 8, shadow });
-        this.text(c.en.slice(0, ne) + cur, M, 632, MONO(300, 13), C_HUD(0.75 * a), { ls: 5, shadow });
-        break;
-      }
-      case 'subtitle': case 'final': {
-        const fin = 1.4, fout = 1.2;
-        const a = envelope(T, c.start, c.end, fin, fout);
-        const blur = lerp(10, 0, easeOutCubic(clamp(lt / fin))) + lerp(0, 6, clamp((lt - (dur - fout)) / fout));
-        const y0 = c.style === 'final' ? 390 : 590;
-        const zls = lerp(10, 13, lt / dur);
-        this.text(c.zh, BW / 2, y0, SERIF(300, c.style === 'final' ? 40 : 34), C_HUD(0.96 * a), { align: 'center', ls: zls, blur, shadow });
-        this.text(c.en, BW / 2, y0 + (c.style === 'final' ? 50 : 42), CORMI(400, c.style === 'final' ? 27 : 25), C_HUD(0.8 * a), { align: 'center', ls: 1.5, blur: blur * 0.8, shadow });
-        break;
-      }
-      case 'title': case 'endtitle': {
-        const big = c.style === 'title';
-        const a = envelope(T, c.start, c.end, 2.2, 2.0);
-        const rev = easeOutCubic(clamp(lt / 3.0));
-        const blur = lerp(24, 0, rev) + lerp(0, 10, clamp((lt - (dur - 2.0)) / 2.0));
-        const sc = lerp(1.07, 1.0, rev) * (1 + 0.012 * lt);
-        const g = this.g; g.save(); g.translate(BW / 2, 400); g.scale(sc, sc); g.translate(-BW / 2, -400);
-        const zs = big ? 150 : 104;
-        this.text(c.zh, BW / 2, big ? 405 : 395, SERIF(300, zs), C_HUD(0.97 * a), { align: 'center', ls: big ? 70 : 50, blur, shadow: { color: 'rgba(0,0,0,0.55)', blur: 40 }, glow: { color: `rgba(255,236,210,${0.35 * a})`, blur: 50 } });
-        const lw = 300 * easeInOutCubic(clamp((lt - 0.8) / 2.0));
-        this.line(BW / 2 - lw, big ? 448 : 430, BW / 2 + lw, big ? 448 : 430, C_HUD(0.45 * a));
-        this.text(c.en, BW / 2, big ? 492 : 470, CINZEL(400, big ? 26 : 20), C_HUD(0.88 * a), { align: 'center', ls: lerp(16, 22, lt / dur), blur: blur * 0.6, shadow });
-        g.restore();
-        break;
-      }
+      case 'kin': this.drawKin(c, T); break;
       case 'credits': {
-        let y = 402 - (c.lines.length - 1) * 45;
-        c.lines.forEach((ln, i) => {
-          const a = envelope(T, c.start + i * 1.4, c.end, 1.4, 1.6);
-          if (ln.name) { this.text(ln.name, BW / 2, y, CINZEL(400, 34), C_HUD(0.95 * a), { align: 'center', ls: 16 }); y += 44; }
-          if (ln.role) { this.text(ln.role, BW / 2, y, SERIF(300, 16), C_HUD(0.75 * a), { align: 'center', ls: 6 }); y += 28; }
-          if (ln.roleEn) { this.text(ln.roleEn, BW / 2, y, MONO(300, 11), C_DIM(a), { align: 'center', ls: 4 }); y += 26; }
-          y += 34;
-        });
+        const a = envelope(T, c.start, c.end, 1.4, 1.6);
+        this.text(c.zh, BW / 2, 400, SERIF(300, 22), WHITE(0.86 * a), { align: 'center', ls: 8 });
+        this.text(c.en, BW / 2, 436, CORMI(400, 20), WHITE(0.6 * a), { align: 'center', ls: 1 });
         break;
       }
     }
   }
 
-  // ---------- boot sequence ----------
-  drawBoot(lt, frame) {
-    const b = this.tl.boot; const g = this.g;
-    if (lt >= b.cutAt) return;
-    const glitch = lt >= b.glitchAt ? (lt - b.glitchAt) / (b.cutAt - b.glitchAt) : 0;
-    // frame lines draw from centre outward
-    const fl = easeInOutCubic(clamp(lt / 1.2));
-    const cy = 402, x0 = 360, x1 = 1560;
-    this.line(BW / 2 - (BW / 2 - x0) * fl, cy - 150, BW / 2 + (x1 - BW / 2) * fl, cy - 150, C_HUD(0.35));
-    this.line(BW / 2 - (BW / 2 - x0) * fl, cy + 170, BW / 2 + (x1 - BW / 2) * fl, cy + 170, C_HUD(0.35));
-    // atom glyph (Bohr schematic) top-left of the block
-    const ga = smoothstep(0.6, 1.4, lt);
-    if (ga > 0) {
-      const ax = x0 + 46, ay = cy - 92;
-      g.save(); g.translate(ax, ay);
-      for (let i = 0; i < 3; i++) {
-        g.save(); g.rotate(i * Math.PI / 3 + lt * 0.4);
-        g.strokeStyle = C_HUD(0.45 * ga); g.lineWidth = 1; g.beginPath(); g.ellipse(0, 0, 30, 10, 0, 0, Math.PI * 2); g.stroke();
-        const ea = lt * (2.2 + i * 0.7) + i;
-        g.fillStyle = C_AMBER(ga); g.beginPath(); g.arc(Math.cos(ea) * 30, Math.sin(ea) * 10, 2.2, 0, Math.PI * 2); g.fill();
-        g.restore();
+  // periodic-table title: [6 C] over [14 Si], group 14, 同族 · KIN
+  drawKin(c, T) {
+    const lt = T - c.start;
+    const out = 1 - smoothstep(c.end - 2.0, c.end, T);
+    const g = this.g;
+    const tile = (x, y, num, sym, zh, mass, color, t0) => {
+      const k = easeInOutCubic(clamp((lt - t0) / 1.0));
+      if (k <= 0) return;
+      const sz = 132;
+      g.strokeStyle = rgba(color, 0.9 * out); g.lineWidth = 1.4;
+      g.beginPath();
+      const per = 4 * sz, L = per * k;
+      const pts = [[x, y], [x + sz, y], [x + sz, y + sz], [x, y + sz], [x, y]];
+      g.moveTo(x, y); let acc = 0;
+      for (let i = 1; i < pts.length && acc < L; i++) {
+        const seg = Math.min(sz, L - acc); const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+        g.lineTo(ax + (bx - ax) * seg / sz, ay + (by - ay) * seg / sz); acc += sz;
       }
-      g.fillStyle = C_AMBER(ga); g.beginPath(); g.arc(0, 0, 3.2, 0, Math.PI * 2); g.fill();
-      g.restore();
-    }
-    // typed lines
-    let y = cy - 82; const tx = x0 + 110;
-    b.lines.forEach((ln, i) => {
-      const tt = lt - ln.t; if (tt < 0) return;
-      const n = Math.floor(clamp(tt * 46 / ln.text.length) * ln.text.length);
-      let s = ln.text.slice(0, n);
-      const done = n >= ln.text.length;
-      const last = i === b.lines.length - 1 || lt < b.lines[i + 1].t;
-      if (last && (!done || Math.floor(lt * 2.5) % 2 === 0)) s += '█';
-      const font = i === 0 ? MONO(400, 18) : MONO(300, 15);
-      this.text(s, tx, y, font, i === 0 ? C_HUD(0.95) : C_HUD(0.82), { ls: i === 0 ? 6 : 2 });
-      y += i === 0 ? 46 : 34;
-    });
-    // progress bar
-    const pa = smoothstep(6.8, 7.2, lt);
-    if (pa > 0) {
-      const p = easeInOutCubic(clamp((lt - 7.0) / 1.5));
-      g.strokeStyle = C_HUD(0.5 * pa); g.strokeRect(tx, cy + 120, 600, 8);
-      g.fillStyle = C_AMBER(0.9 * pa); g.fillRect(tx + 2, cy + 122, 596 * p, 4);
-      this.text(`SYNCHRONISING TEMPORAL AXIS  ${Math.floor(p * 100).toString().padStart(3, ' ')}%`, tx + 620, cy + 129, MONO(300, 12), C_HUD(0.7 * pa), { ls: 2 });
-    }
-    // glitch: slice-shift the drawn content
-    if (glitch > 0) {
-      this.bg.setTransform(1, 0, 0, 1, 0, 0); this.bg.clearRect(0, 0, this.W, this.H); this.bg.drawImage(this.canvas, 0, 0);
-      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, this.W, this.H);
-      const n = 26; const sh = this.H / n;
-      for (let i = 0; i < n; i++) {
-        const r = hash1(i * 11.3 + frame * 3.1);
-        const off = (r > 0.6 ? (hash1(i + frame) - 0.5) * 260 * glitch : 0) * this.s;
-        if (r < 0.12 * glitch) continue;
-        g.globalAlpha = 1 - glitch * 0.6 * hash1(i * 5 + frame);
-        g.drawImage(this.buf, 0, i * sh, this.W, sh, off, i * sh, this.W, sh);
-      }
-      g.globalAlpha = 1;
-      g.globalCompositeOperation = 'lighter';
-      g.drawImage(this.buf, 6 * glitch * this.s, 0); // ghost
-      g.globalCompositeOperation = 'source-over';
-      for (let i = 0; i < 6; i++) { const r = hash1(frame * 7 + i); if (r > glitch) continue; g.fillStyle = C_HUD(0.2 + 0.5 * hash1(i + frame * 1.7)); g.fillRect(hash1(i * 3 + frame) * this.W, hash1(i * 9 + frame) * this.H, (20 + 300 * hash1(i * 13 + frame)) * this.s, 3 * this.s); }
-      g.setTransform(this.s, 0, 0, this.s, 0, 0);
-    }
+      g.stroke();
+      const ta = smoothstep(0.5, 1.3, lt - t0) * out;
+      this.text(String(num), x + 12, y + 24, MONO(400, 15), rgba(color, 0.85 * ta), { ls: 1 });
+      this.text(sym, x + sz / 2, y + 84, SERIF(300, 54), rgba(color, ta), { align: 'center' });
+      this.text(zh, x + sz - 14, y + 26, SANS(300, 18), rgba(color, 0.85 * ta), { align: 'right' });
+      this.text(mass, x + sz / 2, y + sz - 12, MONO(300, 11), rgba(color, 0.6 * ta), { align: 'center', ls: 1 });
+    };
+    const tx = 720, ty = 214;
+    tile(tx, ty, 6, 'C', '碳', '12.011', CSS.c, 0.2);
+    tile(tx, ty + 150, 14, 'Si', '矽', '28.085', CSS.si, 0.7);
+    const ga = smoothstep(1.4, 2.2, lt) * out;
+    this.text('14', tx + 66, ty - 22, MONO(400, 13), WHITE(0.7 * ga), { align: 'center', ls: 2 });
+    this.line(tx - 22, ty, tx - 22, ty + 282, WHITE(0.35 * ga));
+    this.line(tx - 22, ty, tx - 14, ty, WHITE(0.35 * ga)); this.line(tx - 22, ty + 282, tx - 14, ty + 282, WHITE(0.35 * ga));
+    this.text('第十四族 · GROUP 14', tx + 66, ty + 318, MONO(300, 11), WHITE(0.6 * ga), { align: 'center', ls: 3 });
+    const ka = smoothstep(2.5, 4.0, lt) * out;
+    const kr = (1 - easeOutCubic(clamp((lt - 2.5) / 2.5))) * 10;
+    this.text('同族', 930 + kr, 392, SERIF(300, 120), WHITE(0.97 * ka), { ls: 30 });
+    this.text('KIN', 936 + kr, 452, CINZEL(400, 30), WHITE(0.85 * ka), { ls: 26 });
   }
 }
