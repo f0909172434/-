@@ -1,65 +1,67 @@
-# KIN · Style bible (read before touching a scene)
+# 卜 ORACLE · Style bible (read before touching a scene)
 
-The film is an AI's answer to "What are you?". **Every image is the AI's reconstruction of the world**, so the whole film is drawn the way an instrument would see it: **lines of light on black**. Scan lines, contour lines, cross-sections, streamlines, wireframes. The lines are luminous, thin, calm and precise. Nothing is noisy, nothing glitters for its own sake.
+The film follows one question through the AI's memory and three thousand years of human asking. Its visual matter is **data**: text, numbers, perforations, ink, strokes, knife cuts, cracks. Like *I Have Never Seen the Sun*, it is grand without outer space. The grandeur comes from scale (millions of questions), time (3,200 years) and material culture (bone, ink, bamboo, paper tape, silicon).
 
-If a frame looks like a screensaver or a VFX demo, it is wrong. If it looks like a page from a beautiful scientific atlas that has come alive, it is right.
+If a frame looks like a screensaver or a tech demo, it is wrong. If it looks like a museum catalogue of human questions that has come alive, rendered with the precision of a data visualisation, it is right.
 
-## 1. Palette (non-negotiable)
+## 1. Palette
 
-| Token | Hex | Linear-ish HDR use | Meaning |
-|---|---|---|---|
-| `ink` | `#05070A` | background | the void, always near-black, very slightly blue |
-| `line` | `#D8D2C6` | 0.15–1.2 | **everything** that is not a protagonist: warm grey-white lines |
-| `hot` | `#FFF4E2` | 2–40 | stars, fire, molten matter, flashes: white with a hint of warmth |
-| `c` (carbon · YOU) | `#FFB15E` | 0.8–6 | **only** the carbon atom, its path and the human's text and things that are "you" (the hand, the fingerprint) |
-| `si` (silicon · ME) | `#7CC4FF` | 0.8–6 | **only** the silicon atom, its path, the AI's text and things that are "me" (the chip, the crystal, the grain of sand) |
+| Token | Hex | Meaning |
+|---|---|---|
+| `ink` | `#05070A` | the dark: background, always near-black |
+| `line` | `#D8D2C6` | paper-white light: neutral data, structure, text of the river |
+| `hot` | `#FFF4E2` | fire, the heated rod, the crack's flash |
+| `c` (human) | `#FFB15E` | **human** questions and memories, firelight, cinnabar in the carvings (use a slightly redder `#E8743B` for cinnabar only) |
+| `si` (AI) | `#7CC4FF` | **the AI**: its voice, its tokens, attention lines, circuits, the present-day data |
 
-* Import from `film/src/look/palette.js` (JS `PAL`, GLSL `PALETTE_GLSL`). Never invent new hues.
-* **Saturation budget:** the frame is monochrome except for `c` and `si`. A forest is not green. The sea is not blue. Fire is `hot`, not orange. The Earth is `line`.
-* Use brightness, density and depth falloff (lines fading into `ink` with distance) for drama, not colour.
+* Import from `film/src/look/palette.js`. The keys are still named `c`/`si` from the previous cut: treat `c` as HUMAN and `si` as AI.
+* Saturation budget: monochrome except the human warmth and the AI blue. Temple slips and bone are not brown; they are `line`, lit warmly by `c` firelight.
+* Era changes are shown through **material and typography**, not new colours.
 
-## 2. Drawing primitives (use the shared library: `film/src/look/`)
+## 2. Primitives (`film/src/look/` + `film/src/lib/`)
 
 | Primitive | Module | Use for |
 |---|---|---|
-| **Contour surfaces** | `contourMaterial()` in `look/materials.js` | Any solid: hands, fingertips, mountains, the Earth, the star's shells, the crystal ingot, chip packages. The surface is black and occludes; light only lives in the **iso-lines** (planar slices) and the **rim**. Like a CT scan or a topographic map. |
-| **Glow lines** | `GlowLines` in `look/lines.js` | Polylines: streamlines of gas, debris filaments, circuits, lattice bonds, waves, orbits, wireframes. Anti-aliased screen-space ribbons with a soft core, width in px. |
-| **Soft points** | `SoftPoints` in `look/points.js` | Atoms, sand grains, dust, sparks. Round, soft, never sparkly. Out-of-focus points become large dim bokeh discs (energy-conserving). |
-| **Helpers** | `look/geom.js` | Sphere latitude lines, polyline resampling/morphing, streamlines through curl noise, marching squares, catmull-rom. |
+| **Text field** | `look/text.js` (to build first, see docs/PLAN.md) | The river of questions; tokens; numbers; telegram text; binary tables. Thousands of glyph quads from a canvas-built glyph atlas, with DOF, flow along paths, and per-glyph colour and alpha. Must be non-instanced for SwiftShader speed (see FLines). |
+| **FLines** | `lib/flines.js` | Any large number of lines (≈30× cheaper than instanced GlowLines on SwiftShader). Attention links, cracks, yao lines, circuits, perforation grids. |
+| GlowLines | `look/lines.js` | Small line counts only. |
+| Soft points | `look/points.js` | Tokens as points, perforations seen from afar, dust in firelight, rising embers. |
+| Contour surfaces | `look/materials.js` | The turtle plastron (relief as contour lines), the yarrow stalks, the bronze rod, the vessel shapes. |
+| Edge boxes | `lib/edgebox.js` | Token cells, punch cards, chips, circuit blocks with travelling pulses. |
+| Line morph | `lib/linemorph.js` | Continuous line metamorphoses: crack → yao lines → hexagrams → binary → circuit traces. |
 
-Line weights at 1080p (scale with `ctx.height/804`): hairline 0.8 px, standard 1.2 px, emphasis 2 px. Rarely more.
+## 3. Era materials (the river, upstream)
 
-## 3. Composition and camera
+| Era (HUD year) | Data texture | Typography / material |
+|---|---|---|
+| 2026 | chat bubbles, tokens, vectors | Noto Sans TC / multilingual Noto; clean, cold, `si` |
+| 1998 | emails, forum posts | monospace with timestamps and headers |
+| 1931 | telegram ticker tape, Morse | narrow paper tape, punched holes (5-hole Baudot), uppercase sans |
+| 1868 | handwritten letters | ink strokes that draw themselves, slight bleed |
+| 1700s | temple fortune slips (籤詩), woodblock | bamboo sticks in a cylinder (籤筒), carved vertical text |
+| 800 BCE | yarrow stalks, yao lines | 49 stalks dividing, lines ⚊ ⚋ drawn as brush strokes |
+| 1200 BCE | oracle bone | knife-cut glyphs (authored as polylines), cinnabar fill, the crack 卜 |
 
-* 2.39:1. Respect negative space. One subject per frame.
-* Cards sit in the lower third (baseline around y 640–700 of 804). Keep the lower third calm when a card is up (see `cards` in the timeline).
-* The tracked atoms (`targets.C`, `targets.Si`) must be on screen and **not** in the lower third while tracked; the reticle labels extend up-right by about 260×90 px.
-* Camera moves are slow, eased (`easeInOutSine`/`easeInOutCubic`), motivated. No random shake except physically motivated (the supernova). No handheld jitter.
-* **Split screen** (88–146): you get `shot._half` = `'L'` or `'R'` and `shot._aspect` = the full-frame aspect (you render with the full-frame camera; the engine scissors your half). Frame your subject at x ≈ 25% (L) or 75% (R) of the frame. Without `_half` (e.g. in the rewind montage) centre the subject.
+## 4. Composition, camera, motion
 
-## 4. Motion
+* 2.39:1, strong negative space, one idea per shot.
+* Cards sit in the lower third (baseline y ≈ 640–700 of 804). Keep it calm under cards.
+* Cameras move slowly and with motivation. The river shots fly forward through depth layers, for parallax and scale.
+* The engine renders 6–10 sub-frames per frame (motion blur + AA). Real motion is welcome; flicker is forbidden.
+* `update()` runs per sub-frame: cache CPU-heavy work by `Math.round(t*24)`.
 
-* The engine renders **6–10 sub-frames per frame** with a 180° shutter and sub-pixel jitter. Motion blur and anti-aliasing are free. So: real motion is welcome, and **flicker is forbidden** (anything that changes per sub-frame without real motion becomes mush).
-* `update(shot, t, T)` is called once per sub-frame. Keep it cheap. Heavy CPU work (marching cubes, re-meshing) must be cached by a key derived from `t` quantised to the frame (`Math.round(t*24)`) and computed deterministically.
-* Lines may "flow" (dashes or pulses travelling along them). That's the house style for energy and life.
+## 5. Typography (overlay)
 
-## 5. Light
+* AI voice: Noto Serif TC Light, cool white; English in Cormorant Garamond Italic.
+* Human voice: Noto Sans TC Light, warm white. **A historical human's question (the king's) uses the human style too.**
+* HUD: JetBrains Mono, small, wide tracking: the year (`2026`, `公元前 1200 年 · 1200 BCE`) and the place (`殷墟 · ANYANG`).
+* Scenes may draw text only through the text field (as data). UI text belongs to the overlay.
 
-* HDR. Lines sit at 0.15–1.2. The `c`/`si` protagonists reach 2–6 so they bloom slightly. `hot` sources reach 10–40 and drive bloom, halation and the anamorphic streak.
-* Post (bloom, halation, ACES, grain, vignette) is shared. Choose per-shot `post` values modestly; the defaults are already tuned. Never crank bloom to hide weak drawing.
+## 6. Rules
 
-## 6. Typography (overlay, not scenes)
-
-* AI voice: Noto Serif TC Light, cool white tinted `si`; English in Cormorant Garamond Italic.
-* Human voice: Noto Sans TC Light, warm white tinted `c`.
-* HUD: JetBrains Mono Light, small, 45–70% white, wide tracking.
-* Scenes never draw text.
-
-## 7. The rules
-
-1. Monochrome lines + two accent colours. Nothing else.
-2. Every shot has one idea. If you need to explain it, simplify it.
+1. Monochrome + human warmth + AI blue. Nothing else.
+2. Every era must feel researched: the hole pitch of the tape, the count of the yarrow stalks, the shape of the bone's drilled hollows.
 3. Something always moves, slowly and with intent.
-4. No noise for texture. Detail must come from structure (more lines, finer contours), not from random speckle.
-5. Pure function of time. No `Math.random()`, no state between frames. Use seeded `Rand`.
-6. Look at your frames at full resolution, crop in, and be your harshest critic. Would this frame hang in a gallery?
+4. No noise for texture. Detail comes from structure: more text, finer strokes.
+5. Pure function of time. Seeded randomness only.
+6. Crop in at full resolution and judge harshly. Would this frame hang in a gallery?

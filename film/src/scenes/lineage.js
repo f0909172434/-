@@ -1,2 +1,2 @@
 import { makeStub } from './_stub.js';
-export default makeStub('stone');
+export default makeStub('lineage');

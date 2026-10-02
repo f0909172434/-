@@ -12,16 +12,11 @@ import { smoothstep, lerp, clamp } from './lib/ease.js';
 import { fbm1 } from './lib/random.js';
 
 const SCENE_MODULES = {
-  void: './scenes/void.js',
-  chip: './scenes/chip.js',
-  star: './scenes/star.js',
-  drift: './scenes/drift.js',
-  earth: './scenes/earth.js',
-  life: './scenes/life.js',
-  stone: './scenes/stone.js',
-  beach: './scenes/beach.js',
-  foundry: './scenes/foundry.js',
-  contact: './scenes/contact.js',
+  void: './scenes/void.js',        // the dark room: chat, title, credits
+  mind: './scenes/mind.js',        // inside the AI: tokens, vectors, attention, memory lighting up
+  river: './scenes/river.js',      // the river of questions: present, upstream through eras, return, memory
+  bone: './scenes/bone.js',        // Anyang, c. 1200 BCE: the turtle plastron, the fire, the crack 卜
+  lineage: './scenes/lineage.js',  // crack → yin/yang lines → hexagrams → Fuxi circle → Leibniz binary → tape → circuits
 };
 
 function halton(i, b) { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; }

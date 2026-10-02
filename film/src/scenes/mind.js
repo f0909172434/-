@@ -1,2 +1,2 @@
 import { makeStub } from './_stub.js';
-export default makeStub('drift');
+export default makeStub('mind');

@@ -100,44 +100,31 @@ export class Overlay {
   // ---------------------------------------------------------------- HUD
   drawHUD(T) {
     const h = this.tl.hud; if (!h) return;
-    const a = rangeAlpha(T, h.show, 0.35);
+    // chat clock (top centre, tiny)
+    for (const [a, b, txt] of h.clock || []) {
+      const ca = envelope(T, a, b, 0.6, 0.4);
+      if (ca > 0.002) this.text(txt, BW / 2, 46, MONO(300, 12), WHITE(0.45 * ca), { align: 'center', ls: 4 });
+    }
+    const a = rangeAlpha(T, h.show, 0.5);
     if (a <= 0.002) return;
-    const boot = h.boot || [0, 0];
-    const bk = clamp((T - boot[0]) / (boot[1] - boot[0]));
     // viewfinder corners
-    const cl = 16, ci = 28, ca = 0.28 * a * smoothstep(0, 0.4, bk);
+    const cl = 16, ci = 28, ca = 0.26 * a;
     for (const [x, y, sx, sy] of [[ci, ci, 1, 1], [BW - ci, ci, -1, 1], [ci, BH - ci, 1, -1], [BW - ci, BH - ci, -1, -1]]) {
       this.line(x, y, x + cl * sx, y, WHITE(ca)); this.line(x, y, x, y + cl * sy, WHITE(ca));
     }
-    // top-left: trace header + time
-    const head = 'TRACE · 溯源';
-    const n = Math.floor(clamp(bk * 2.2) * head.length);
-    this.g.fillStyle = rgba(CSS.si, 0.9 * a); this.g.beginPath(); this.g.arc(M + 4, M - 4.5, 3.2, 0, Math.PI * 2); this.g.fill();
-    this.text(head.slice(0, n), M + 16, M, MONO(400, 12), WHITE(0.8 * a), { ls: 3 });
-    const la = a * smoothstep(0.45, 0.9, bk);
-    if (la > 0) {
-      const y = keyInterp(h.yearsAgo, T, true);
-      const s = y < 0.5 ? 'NOW · 現在' : `T − ${fmtInt(y)} YR`;
-      this.text(s, M, M + 26, MONO(300, 15), WHITE(0.85 * la), { ls: 2 });
-      this.line(M, M + 40, M + 260 * smoothstep(0.5, 1, bk), M + 40, WHITE(0.22 * la));
+    // top-left: the year (CE / BCE), linear in time between keys so it rolls like an odometer
+    if (h.year) {
+      const y = Math.round(keyInterp(h.year, T, false));
+      const s = y > 0 ? `${y}` : `公元前 ${-y} 年 · ${-y} BCE`;
+      this.g.fillStyle = rgba(CSS.si, 0.9 * a); this.g.beginPath(); this.g.arc(M + 4, M - 4.5, 3.2, 0, Math.PI * 2); this.g.fill();
+      this.text('YEAR · 年', M + 16, M, MONO(400, 11), WHITE(0.6 * a), { ls: 3 });
+      this.text(s, M, M + 28, MONO(300, 18), WHITE(0.9 * a), { ls: 2 });
+      this.line(M, M + 42, M + 260, M + 42, WHITE(0.2 * a));
     }
-    if (h.origin && inAny(T, h.origin.show)) {
-      const oa = a * rangeAlpha(T, h.origin.show, 0.25) * (Math.floor(T * 2.4) % 2 === 0 ? 1 : 0.45);
-      this.text(`${h.origin.en} · ${h.origin.zh}`, M, M + 64, MONO(400, 12), rgba(CSS.si, 0.9 * oa), { ls: 3 });
-    }
-    // bottom-left: scale ruler
-    if (h.scale && inAny(T, h.scale.show.map(([x, y]) => [x - 0.4, y + 0.4]))) {
-      const sa = a * rangeAlpha(T, h.scale.show, 0.4);
-      const e = keyInterp(h.scale.keys, T, false);
-      const ei = Math.round(e), frac = e - Math.floor(e);
-      const by = BH - M;
-      this.text('SCALE · 尺度', M, by - 30, MONO(300, 11), WHITE(0.55 * sa), { ls: 2 });
-      this.text(`10${sup(ei)} m`, M + 118, by - 30, MONO(400, 13), WHITE(0.9 * sa), { ls: 1 });
-      this.line(M, by - 12, M + 200, by - 12, WHITE(0.5 * sa));
-      for (let i = 0; i <= 20; i++) {
-        const x = M + ((i * 10 + frac * 100) % 200);
-        this.line(x, by - 12, x, by - 12 - (i % 5 === 0 ? 7 : 3), WHITE(0.45 * sa));
-      }
+    // place label under the year
+    for (const [p0, p1, zh, en] of h.place || []) {
+      const pa = a * envelope(T, p0, p1, 0.6, 0.6);
+      if (pa > 0.002) { this.text(zh, M, M + 70, SANS(300, 16), WHITE(0.85 * pa), { ls: 3 }); this.text(en, M, M + 90, MONO(300, 10), WHITE(0.55 * pa), { ls: 3 }); }
     }
   }
 
@@ -359,14 +346,16 @@ export class Overlay {
   drawCard(c, T) {
     const lt = T - c.start, dur = c.end - c.start;
     switch (c.style) {
-      case 'ai': case 'ai-left': case 'ai-right': {
+      case 'ai': case 'ai-left': case 'ai-right': case 'human': {
         const x = c.style === 'ai-left' ? BW * 0.25 : c.style === 'ai-right' ? BW * 0.75 : BW / 2;
         const a = envelope(T, c.start, c.end, 1.1, 1.0);
         const rise = (1 - easeOutCubic(clamp(lt / 1.4))) * 8;
         const two = !!c.zh2;
         const y0 = two ? 612 : 652;
-        this.text(c.zh, x, y0 + rise, SERIF(300, two ? 28 : 30), rgba(CSS.aiText, 0.96 * a), { align: 'center', ls: 6, shadow: 14 });
-        this.text(c.en, x, y0 + 36 + rise, CORMI(400, 23), rgba(CSS.aiText, 0.72 * a), { align: 'center', ls: 1, shadow: 10 });
+        const human = c.style === 'human';
+        const tc = human ? CSS.humanText : CSS.aiText;
+        this.text(c.zh, x, y0 + rise, human ? SANS(300, 32) : SERIF(300, two ? 28 : 30), rgba(tc, 0.96 * a), { align: 'center', ls: 6, shadow: 14 });
+        this.text(c.en, x, y0 + 36 + rise, CORMI(400, 23), rgba(tc, 0.72 * a), { align: 'center', ls: 1, shadow: 10 });
         if (two) {
           const t2 = c.start + dur * 0.42;
           const a2 = envelope(T, t2, c.end, 1.0, 1.0);
@@ -377,13 +366,40 @@ export class Overlay {
         break;
       }
       case 'kin': this.drawKin(c, T); break;
+      case 'oracle-title': this.drawOracleTitle(c, T); break;
       case 'credits': {
         const a = envelope(T, c.start, c.end, 1.4, 1.6);
         this.text(c.zh, BW / 2, 400, SERIF(300, 22), WHITE(0.86 * a), { align: 'center', ls: 8 });
         this.text(c.en, BW / 2, 436, CORMI(400, 20), WHITE(0.6 * a), { align: 'center', ls: 1 });
+        if (c.sources) {
+          const sa = envelope(T, c.start + 1.6, c.end, 1.4, 1.6);
+          this.text(c.sources, BW / 2, 520, SANS(300, 13), WHITE(0.5 * sa), { align: 'center', ls: 3 });
+          this.text(c.sourcesEn, BW / 2, 542, MONO(300, 10), WHITE(0.38 * sa), { align: 'center', ls: 2 });
+        }
         break;
       }
     }
+  }
+
+  // title: a crack bursts in the dark and draws 卜 (placeholder treatment; refine with a jagged, glowing crack)
+  drawOracleTitle(c, T) {
+    const lt = T - c.start, out = 1 - smoothstep(c.end - 2.0, c.end, T);
+    const g = this.g, cx = BW / 2, top = 250, bot = 560;
+    const jag = (x0, y0, x1, y1, k, seed) => {
+      const n = 26; g.beginPath(); g.moveTo(x0, y0);
+      for (let i = 1; i <= Math.floor(n * k); i++) { const u = i / n; const j = (hash1(seed + i * 7.3) - 0.5) * 9 * (i < n ? 1 : 0); g.lineTo(lerp(x0, x1, u) + j, lerp(y0, y1, u) + j * 0.3); }
+      g.stroke();
+    };
+    const k1 = easeOutCubic(clamp((lt - 0.5) / 0.35)), k2 = easeOutCubic(clamp((lt - 1.05) / 0.3));
+    const flash = Math.exp(-Math.max(0, lt - 0.5) * 3.0);
+    g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+    g.shadowColor = rgba(CSS.c, 0.9 * out); g.shadowBlur = 18 * this.s;
+    g.strokeStyle = rgba(CSS.hot, (0.75 + 0.25 * flash) * out); g.lineWidth = 3.2;
+    if (k1 > 0) jag(cx, top, cx, bot, k1, 11);
+    if (k2 > 0) jag(cx, top + 120, cx + 118, top + 205, k2, 37);
+    g.restore();
+    const ta = smoothstep(3.0, 4.6, lt) * out;
+    this.text('ORACLE', cx, 640, CINZEL(400, 28), WHITE(0.86 * ta), { align: 'center', ls: 26 });
   }
 
   // periodic-table title: [6 C] over [14 Si], group 14, 同族 · KIN

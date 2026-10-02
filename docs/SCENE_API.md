@@ -1,6 +1,6 @@
 # Scene authoring guide
 
-Read `docs/STYLE.md` (the look) and `docs/SCREENPLAY.md` (the story) first. Every picture comes from a **scene module** in `film/src/scenes/<name>.js`. The engine (`film/src/engine.js`) picks the scene for the shot at time `T` and calls it once per **sub-frame** (6–10 per frame, spread over a 180° shutter, each with a sub-pixel jitter). Then it runs the shared post-processing and the overlay (HUD, reticles, chat, cards). Scenes never draw text.
+Read `docs/PLAN.md`, `docs/STYLE.md` (the look) and `docs/SCREENPLAY.md` (the story) first. Use `lib/flines.js` for large line counts and `look/text.js` (once built) for text as data. Every picture comes from a **scene module** in `film/src/scenes/<name>.js`. The engine (`film/src/engine.js`) picks the scene for the shot at time `T` and calls it once per **sub-frame** (6–10 per frame, spread over a 180° shutter, each with a sub-pixel jitter). Then it runs the shared post-processing and the overlay (HUD, reticles, chat, cards). Scenes never draw text.
 
 ## Contract
 
