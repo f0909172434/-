@@ -52,8 +52,13 @@ export default class RiverScene {
     this.tfR = new TextField(ctx, { atlas: this.atlas, focus: 14, aperture: 0.04, maxBlur: 22, fade: [1.4, 3.4, 52, 84] });
     this.tfR.setPaths([path], { samples: 1200 });
     this.tfH = new TextField(ctx, { atlas: this.atlas, focus: 9, aperture: 0.05, maxBlur: 20, fade: [0.5, 1.5, 0, 0] });
-    this.tfW = new TextField(ctx, { atlas: this.atlas, focus: 6, aperture: 0.16, maxBlur: 40, fade: [0.35, 1.2, 0, 0] });
+    this.tfW = new TextField(ctx, { atlas: this.atlas, focus: 6, aperture: 0.06, maxBlur: 24, fade: [0.6, 1.8, 0, 0] });
     this.tfM = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.045, maxBlur: 22, fade: [2.6, 5.2, 50, 80] });
+    // the grain (tiny questions between the lanes) in fields of their own: invisible beyond ~30 units, so cut there
+    this.tfG = new TextField(ctx, { atlas: this.atlas, focus: 14, aperture: 0.04, maxBlur: 22, fade: [1.4, 3.4, 18, 30] });
+    this.tfG.setPaths([path], { samples: 1200 });
+    this.tfMG = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.045, maxBlur: 22, fade: [2.6, 5.2, 18, 30] });
+    this.tfMG.setPaths([path], { samples: 1200 });
     this.tfM.setPaths([path], { samples: 1200 });
     this.tfB = new TextField(ctx, { atlas: this.atlasBig, focus: 10, aperture: 0.04, maxBlur: 20, fade: [0.4, 1.2, 0, 0] });
     this.tfB.setPaths([path], { samples: 1200 });
@@ -66,11 +71,13 @@ export default class RiverScene {
 
     const R = this.buildRiver();
     await this.tfR.prepare(R.items); this.tfR.set(R.items);
+    await this.tfG.prepare(R.grain); this.tfG.set(R.grain);
     this.plR = new PathLines({ resolution: this.res, tf: this.tfR, aperture: 0.04, fade: [1.4, 3.4, 52, 84] });
     this.plR.set(R.segs);
 
     const M = this.buildMemory();
     await this.tfM.prepare(M.items); this.tfM.set(M.items);
+    await this.tfMG.prepare(M.grain); this.tfMG.set(M.grain);
     this.plM = new PathLines({ resolution: this.res, tf: this.tfM, aperture: 0.045, fade: [2.6, 5.2, 50, 80] });
     this.plM.set(M.segs);
 
@@ -88,8 +95,9 @@ export default class RiverScene {
     this.buildSource();
     this.buildConverge();
 
+    console.warn('[river-stats]', JSON.stringify({ tfR: [this.tfR.strings, this.tfR.total], tfG: [this.tfG.strings, this.tfG.total], tfM: [this.tfM.strings, this.tfM.total], tfMG: [this.tfMG.strings, this.tfMG.total] }));
     for (const m of [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh,
-      this.tfR.mesh, this.tfM.mesh, this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh,
+      this.tfR.mesh, this.tfG.mesh, this.tfM.mesh, this.tfMG.mesh, this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh,
       this.conv.mesh, this.tfB.mesh, this.tfL.mesh]) this.scene.add(m);
   }
 
@@ -132,7 +140,7 @@ export default class RiverScene {
 
   // ------------------------------------------------------------------------------------------ the river (present + eras)
   buildRiver() {
-    const r = new Rand(1234), items = [], segs = [];
+    const r = new Rand(1234), items = [], segs = [], grain = [];
     const R = this.river;
     const B = eraBounds();
     // era of a string at s (a soft boundary decided per string)
@@ -335,12 +343,26 @@ export default class RiverScene {
     const sparse = e => [1, 1.6, 2.3, 2.6, 3.0, 3.6, 99][e];
     for (const u of heroU) walk(u, gens.hero, 0.5, 3.2, sparse);
     for (const u of fillU) walk(u, (e, s, uu) => gens.fill(e, s, uu), 0.15, 1.3, sparse);
-    return { items, segs };
+    // the grain of the present river: thousands of tiny, dim questions between the lanes (finer strokes, not noise)
+    const fineU = [];
+    while (fineU.length < 120) { const u = Math.sin((r.next() * 2 - 1) * Math.PI / 2) * 0.985; if (fineU.every(v => Math.abs(v - u) > 0.005)) fineU.push(u); }
+    for (const u of fineU) {
+      let s = 66 + r.next() * 2;
+      while (s < RIVER.S - 1) {
+        if (eraOf(s) !== 0) { s += 0.7; continue; }
+        const half = R.at(s).half, it = qItem(r.range(0.03, 0.048), r.range(0.16, 0.3) * (1 - 0.6 * smoothstep(0.3, 0.9, u)));
+        const len = width(it);
+        place(it, s, u * half + r.range(-0.01, 0.01) * half, Math.pow(r.next(), 3) * 0.1, 0);
+        grain.push(items.pop());
+        s += len + r.range(0.08, 0.8);
+      }
+    }
+    return { items, segs, grain };
   }
 
   // ------------------------------------------------------------------------------------------ memory river
   buildMemory() {
-    const r = new Rand(777), items = [], segs = [];
+    const r = new Rand(777), items = [], segs = [], grain = [];
     const R = this.river;
     const memS = STANZA.s0 + STANZA.v * 10 + 1, memN = STANZA.n;   // where the human's sentences float at uTime 10
     const warmOf = (s, n) => {   // the warmth spreads from the sentences, upstream and downstream
@@ -362,6 +384,20 @@ export default class RiverScene {
     const seg = (P, a, b, w, I) => segs.push({ a: [P.s0 + a[0], a[1], a[2]], b: [P.s0 + b[0], b[1], b[2]], w, color: WARM_LINE, intensity: I, speed: P.speed });
     const pickQ = () => D.Q2026[r.int(0, D.Q2026.length - 1)];
     const lanes = []; for (let i = 0; i < 40; i++) lanes.push(-0.97 + 1.94 * (i + 0.5) / 40);
+    // grain: tiny dim questions between the lanes, warming with the rest
+    for (let i = 0; i < 90; i++) {
+      const u = Math.sin((r.next() * 2 - 1) * Math.PI / 2) * 0.98;
+      let s = 84 + r.next() * 2;
+      while (s < 148) {
+        const half = R.at(s).half, n = u * half;
+        if (Math.abs(n - memN) < 0.75 && s > memS - 9 && s < memS + 9) { s += 0.6; continue; }
+        const [lang, q] = pickQ();
+        const it = { text: q, font: D.LATIN.has(lang) ? 'latin' : 'sans', weight: 400, size: r.range(0.03, 0.046), anchor: [0, 0], color: PAL.line, intensity: r.range(0.2, 0.34) };
+        const len = this.tfM.measure(it).width * it.size; put(it, s, n, Math.pow(r.next(), 3) * 0.1);
+        grain.push(items.pop());
+        s += len + r.range(0.1, 0.9);
+      }
+    }
     for (const u of lanes) {
       let s = 84 + r.next() * 2;
       while (s < 148) {
@@ -406,7 +442,7 @@ export default class RiverScene {
         s += len + r.range(0.2, 1.4);
       }
     }
-    return { items, segs };
+    return { items, segs, grain };
   }
 
   // ------------------------------------------------------------------------------------------ warm cloud + the question
@@ -418,8 +454,8 @@ export default class RiverScene {
       const d = r.range(2.2, 7.5), x = r.gauss() * 0.42 * d, y = r.gauss() * 0.2 * d;
       const p = [R.x + Bs.f[0] * d + Bs.r[0] * x + Bs.u[0] * y, R.y + Bs.f[1] * d + Bs.r[1] * x + Bs.u[1] * y, R.z + Bs.f[2] * d + Bs.r[2] * x + Bs.u[2] * y];
       const [lang, q] = D.Q2026[r.int(0, D.Q2026.length - 1)];
-      items.push({ text: q, font: D.LATIN.has(lang) ? 'latin' : 'sans', weight: 400, pos: p, billboard: true, size: r.range(0.04, 0.075),
-        color: r.next() < 0.25 ? PAL.hot : PAL.c, intensity: r.range(0.7, 1.4), show: [-1e6, 47.6 - G_REF + r.range(0, 1.2), 0, 0.9] });
+      items.push({ text: q, font: D.LATIN.has(lang) ? 'latin' : 'sans', weight: 400, pos: p, billboard: true, size: r.range(0.03, 0.055),
+        color: r.next() < 0.2 ? PAL.hot : PAL.c, intensity: r.range(0.55, 1.1), show: [-1e6, 47.6 - G_REF + r.range(0, 1.2), 0, 0.9] });
     }
     this.qIdx = items.length;
     items.push({ text: '她會好起來嗎？', font: 'sans', weight: 300, pos: [0, 0, 0], billboard: 'upright', size: 0.2, color: PAL.c, intensity: 1.55 });
@@ -449,8 +485,8 @@ export default class RiverScene {
     this.memSpeed = vCam;
     const s0 = STANZA.s0;                // left edge at uTime 0 (the memory camera aims at the stanza's centre)
     const hs = [0.62, 0.37, 0.12], t0 = [4.6, 5.9, 7.6];
-    D.MEMORY.forEach((m, i) => items.push({ text: m, font: 'sans', weight: 300, size: 0.165, anchor: [0, 0], path: 0, s: s0, off: [hs[i] - 0.06, STANZA.n], speed: STANZA.v,
-      color: PAL.c, intensity: 1.6, reveal: [t0[i], t0[i] + 1.3], show: [t0[i] - 0.2, 1e6, 0.4, 0] }));
+    D.MEMORY.forEach((m, i) => items.push({ text: m, font: 'sans', weight: 300, size: 0.178, anchor: [0, 0], path: 0, s: s0, off: [hs[i] * 1.08 - 0.08, STANZA.n], speed: STANZA.v,
+      color: PAL.c, intensity: 2.0, reveal: [t0[i], t0[i] + 1.3], show: [t0[i] - 0.2, 1e6, 0.4, 0] }));
     // the return line (plane, placed per frame in front of the camera)
     const line = [{ text: '她會好起來嗎？', font: 'sans', weight: 300, size: 0.15, pos: [0, 0, 0], ax: [1, 0, 0], ay: [0, 1, 0], anchor: [0.5, 0.5],
       color: PAL.c, intensity: 1.7, alpha: 0 }];
@@ -650,7 +686,7 @@ export default class RiverScene {
   buildConverge() {
     this.conv = new FLines({ resolution: this.res });
     const r = new Rand(99);
-    this.convDefs = Array.from({ length: 90 }, () => ({ y: r.range(-0.42, 0.5), x0: r.range(-1.1, 0.2), len: r.range(0.3, 1.2), t: r.range(0, 0.35), I: r.range(0.15, 0.6), lane: r.range(-0.5, 0.5) }));
+    this.convDefs = Array.from({ length: 64 }, (_, i) => ({ y: r.range(-0.42, 0.5), x0: r.range(-1.1, 0.2), len: r.range(0.3, 1.2), t: r.range(0, 0.35), I: r.range(0.06, 0.2), lane: -1 + 2 * (i + 0.5) / 64 }));
   }
 
   // ------------------------------------------------------------------------------------------ per-frame helpers
@@ -799,7 +835,7 @@ export default class RiverScene {
     else R = rig('upstream', clamp(G, 44, 104), this.river);
     this.setCamera(R, shot);
     const cam = this.camera;
-    const all = [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh, this.tfR.mesh, this.tfM.mesh,
+    const all = [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh, this.tfR.mesh, this.tfG.mesh, this.tfM.mesh, this.tfMG.mesh,
       this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh, this.conv.mesh, this.tfB.mesh, this.tfL.mesh];
     for (const m of all) m.visible = false;
     let post;
@@ -810,9 +846,7 @@ export default class RiverScene {
       const ut = tau - G_REF;
       const fd = mode === 'return' ? focusRet(clamp(G, 159, 173))[1] : focusDist(clamp(G, 44, 104));
       const focus = mode === 'return' ? fd * 0.9 : fd * 0.88;
-      for (const f of [this.tfR, this.plR]) { f.uniforms.uTime.value = ut; f.uniforms.uFocus.value = focus; }
-      const ap = mode === 'return' ? 0.05 : lerp(0.07, 0.05, smoothstep(70, 86, G));
-      this.tfR.uniforms.uAperture.value = ap; this.plR.uniforms.uAperture.value = ap;
+      for (const f of [this.tfR, this.tfG, this.plR]) { f.uniforms.uTime.value = ut; f.uniforms.uFocus.value = focus; f.uniforms.uAperture.value = mode === 'return' ? 0.05 : lerp(0.07, 0.05, smoothstep(70, 86, G)); }
       // dim the river for the convergence (return) and as the source takes over (upstream)
       let op = 1;
       if (mode === 'return') op = 1 - 0.95 * smoothstep(169.8, 171.2, G);
@@ -822,15 +856,16 @@ export default class RiverScene {
         hold = Math.max(hold, envelope(G, 86.6, 92.0, 0.6, 0.6));
         op = (1 - 0.42 * hold) * (1 - 0.55 * smoothstep(94, 99.5, G));
       }
-      this.tfR.uniforms.uOpacity.value = op; this.plR.uniforms.uOpacity.value = op;
+      this.tfR.uniforms.uOpacity.value = op; this.plR.uniforms.uOpacity.value = op; this.tfG.uniforms.uOpacity.value = op;
       this.tfR.cull(cam, ut, mode === 'return' ? fk * 2 + 1 : fk);
-      this.tfR.mesh.visible = true; this.plR.mesh.visible = true;
+      this.tfG.cull(cam, ut, mode === 'return' ? fk * 2 + 1 : fk);
+      this.tfR.mesh.visible = true; this.plR.mesh.visible = true; this.tfG.mesh.visible = true;
       this.streams.uniforms.uTime.value = ut;
       this.streams.uniforms.uOpacity.value = mode === 'return' ? op : 1;
       this.streams.mesh.visible = true;
 
       // the source: firelight and the crack (from the yarrow era on, and at the start of the return)
-      const fireK = mode === 'return' ? 1 - smoothstep(160.6, 162.2, G) : smoothstep(88.5, 95.5, G);
+      const fireK = mode === 'return' ? 0.45 * (1 - smoothstep(160.6, 162.0, G)) : smoothstep(88.5, 95.5, G);
       if (fireK > 0.002) {
         const breathe = 1 + 0.1 * Math.sin(G * 2 * Math.PI / 4.1) + 0.05 * Math.sin(G * 2 * Math.PI / 2.63 + 1.3);
         this.fire.material.uniforms.uI.value = 0.3 * fireK * breathe;
@@ -886,16 +921,16 @@ export default class RiverScene {
     const polys = [];
     for (const c of this.convDefs) {
       const kk = easeInOutCubic(clamp((k - c.t) / (1 - c.t * 0.6), 0, 1));
-      const y = lerp(c.y * tx * d * 0.42, c.lane * 0.012, kk);
-      const xa = lerp(c.x0 * tx * d * 0.9, -lineW / 2, kk), xb = lerp(xa + c.len * tx * d * 0.5, lineW / 2, kk);
-      const I = c.I * smoothstep(169.4, 170.0, G) * (1 - smoothstep(170.9, 171.6, G)) * (0.6 + 0.8 * kk);
+      const y = lerp(c.y * tx * d * 0.42, c.lane * 0.068, kk);
+      const xa = lerp(c.x0 * tx * d * 0.9, -lineW / 2 * (0.92 + 0.08 * hash1(c.lane * 9)), kk), xb = lerp(xa + c.len * tx * d * 0.5, lineW / 2 * (0.92 + 0.08 * hash1(c.lane * 7)), kk);
+      const I = c.I * smoothstep(169.4, 170.0, G) * (1 - smoothstep(170.75, 171.45, G)) * (0.7 + 0.5 * kk);
       if (I <= 0.003) continue;
-      polys.push({ points: [...at(xa, y), ...at(xb, y)], color: kk > 0.5 ? PAL.c : PAL.line, intensity: I, width: 0.9 });
+      polys.push({ points: [...at(xa, y), ...at(xb, y)], color: mixc(PAL.line, PAL.c, kk), intensity: I, width: 0.7 });
     }
     this.conv.setPolylines(polys); this.conv.mesh.visible = polys.length > 0;
     // the line itself
-    const a = smoothstep(170.85, 171.5, G);
-    this.tfL.update(0, { pos: O, ax: [Bs.r[0], Bs.r[1], Bs.r[2]], ay: [Bs.u[0], Bs.u[1], Bs.u[2]], alpha: a, reveal: [170.85 - 160, 171.55 - 160] });
+    const a = smoothstep(170.6, 171.3, G);
+    this.tfL.update(0, { pos: O, ax: [Bs.r[0], Bs.r[1], Bs.r[2]], ay: [Bs.u[0], Bs.u[1], Bs.u[2]], alpha: a, reveal: [170.6 - 160, 171.4 - 160] });
     this.tfL.uniforms.uTime.value = G - 160;
     this.tfL.mesh.visible = true;
   }
@@ -903,12 +938,12 @@ export default class RiverScene {
   updateMemory(G, R, fk) {
     const ut = G - 212;
     const fd = 11.5;
-    for (const f of [this.tfM, this.plM]) { f.uniforms.uTime.value = ut; f.uniforms.uFocus.value = fd * 0.92; }
+    for (const f of [this.tfM, this.tfMG, this.plM]) { f.uniforms.uTime.value = ut; f.uniforms.uFocus.value = fd * 0.92; }
     // dark under the chat (212-219), then the river comes up; brightest around 232
-    const op = lerp(0.16, 1, smoothstep(218.5, 225, G)) * (1 + 0.15 * envelope(G, 226, 240, 5, 6));
-    this.tfM.uniforms.uOpacity.value = op; this.plM.uniforms.uOpacity.value = op;
-    this.tfM.cull(this.camera, ut, fk);
-    this.tfM.mesh.visible = this.plM.mesh.visible = true;
+    const op = lerp(0.15, 0.82, smoothstep(218.5, 225, G)) * (1 + 0.16 * envelope(G, 226, 240, 5, 6));
+    this.tfM.uniforms.uOpacity.value = op; this.plM.uniforms.uOpacity.value = op; this.tfMG.uniforms.uOpacity.value = op;
+    this.tfM.cull(this.camera, ut, fk); this.tfMG.cull(this.camera, ut, fk);
+    this.tfM.mesh.visible = this.plM.mesh.visible = this.tfMG.mesh.visible = true;
     this.streams.uniforms.uTime.value = ut;
     this.streams.uniforms.uOpacity.value = op * 0.8;
     this.streams.mesh.visible = true;
@@ -920,7 +955,7 @@ export default class RiverScene {
   }
 
   dispose() {
-    for (const f of [this.tfR, this.tfH, this.tfW, this.tfM, this.tfB, this.tfL, this.plR, this.plM, this.streams, this.exLines, this.stalks, this.yao, this.crackCore, this.crackGlow, this.conv]) f?.dispose();
+    for (const f of [this.tfR, this.tfG, this.tfH, this.tfW, this.tfM, this.tfMG, this.tfB, this.tfL, this.plR, this.plM, this.streams, this.exLines, this.stalks, this.yao, this.crackCore, this.crackGlow, this.conv]) f?.dispose();
   }
 }
 
