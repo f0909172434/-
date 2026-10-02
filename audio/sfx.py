@@ -462,72 +462,97 @@ def quill(dur, seed=0):
     return P(y * 0.05, 0.25)
 
 
-def fortune_sticks(dur, seed=0, rate=4.0):
-    """求籤: a bamboo cylinder of sticks shaken in rhythm until one stick falls out and clatters."""
+def fortune_sticks(dur, shake, rise, seed=0, rate=4.6):
+    """求籤: a bamboo cylinder shaken (times relative: shake = (a, b), peak in the middle), then the chosen stick
+    slides up out of the bundle (rise = (a, b)) and stops with a small wooden knock."""
     r = R(seed)
     n = ns(dur)
     times, amps, pans_ = [], [], []
-    tf = dur - 0.75
-    k = 0
-    tc = 0.1
-    while tc < tf - 0.1:
-        for _ in range(r.integers(12, 26)):
-            times.append(tc + r.gamma(2.0, 0.018))
-            amps.append(r.uniform(0.2, 1.0) * (0.7 + 0.3 * (k % 2)))
+    a0, a1 = shake
+    pk = 0.5 * (a0 + a1)
+    tc, k = a0, 0
+    while tc < a1:
+        g = np.exp(-((tc - pk) / (0.45 * (a1 - a0))) ** 2)
+        for _ in range(r.integers(10, 24)):
+            times.append(tc + r.gamma(2.0, 0.016))
+            amps.append(r.uniform(0.2, 1.0) * (0.35 + 0.65 * g))
             pans_.append(r.uniform(-0.25, 0.25))
         k += 1
         tc += (1.0 / rate) * (1.12 if k % 2 else 0.88)
     kern = [wood_kernel(r, 1100, 2900, 0.018, 3) for _ in range(4)]
     out = impulses(n, times, amps, pans_, kern, r)
-    body = np.zeros(n)
-    exc = out.mean(axis=0)
-    body = modal(exc, [390, 1120, 1830], [0.06, 0.04, 0.03], [1.0, 0.4, 0.2])
-    out = out + P(body * 0.6, 0.0)
-    # the one stick falls out: clack + bounces
-    for j, (dt, a) in enumerate([(0.0, 1.0), (0.17, 0.45), (0.29, 0.25), (0.36, 0.12)]):
-        kk = wood_kernel(r, 1500, 3800, 0.03, 4)
-        i = ns(tf + dt)
-        m = min(len(kk), n - i)
-        if m > 0:
-            out[:, i:i + m] += P(kk[:m] * a * 0.8, 0.35 + 0.05 * j)
+    out = out + P(modal(out.mean(axis=0), [390, 1120, 1830], [0.06, 0.04, 0.03], [1.0, 0.4, 0.2]) * 0.6, 0.0)
+    r0, r1 = rise                               # the stick slides up: dry bamboo friction, then it stops
+    m = ns(r1 - r0)
+    tt = tvec(m)
+    u = tt / (r1 - r0)
+    fr = bp(r.standard_normal(m), 900, 4200) * np.sin(np.pi * u) ** 0.8 * (0.6 + 0.4 * np.abs(np.sin(TWO_PI * 23 * tt)))
+    fr = fr + 0.4 * modal(fr, [620, 1480], [0.03, 0.02], [1.0, 0.5])
+    i = ns(r0)
+    out[:, i:i + m] += P(fr * 0.05, 0.2)[:, :max(0, min(m, n - i))]
+    kk = wood_kernel(r, 1300, 3200, 0.025, 4)
+    i = ns(r1)
+    mm = min(len(kk), n - i)
+    if mm > 0:
+        out[:, i:i + mm] += P(kk[:mm] * 0.35, 0.2)
     return out * 0.09
 
 
-def yarrow(dur, seed=0):
-    """蓍草: forty-nine dry stalks divided in two, then counted off by fours onto the mat."""
+def dry_swish(d, r, level=0.5):
+    """A bundle of dry stalks divided / gathered: papery swish with tiny crackles."""
+    m = ns(d)
+    tt = tvec(m)
+    e = np.sin(np.pi * np.clip(tt / d, 0, 1)) ** 1.5
+    x = P(bp(colored_noise(m, r, -1.0), 1500, 8000) * e * level, 0.0)
+    tm = r.uniform(0, d, int(d * 260))
+    cr = spray(d, tm, r.uniform(-0.3, 0.3, len(tm)), r, f_range=(2000, 6500), decay=(0.0008, 0.003), amp=(0.2, 1.0))
+    return x + cr * e[None] * 0.9
+
+
+def brush(d, r):
+    """A brush stroke on paper: soft bristle friction."""
+    m = ns(d)
+    tt = tvec(m)
+    e = np.sin(np.pi * np.clip(tt / d, 0, 1)) ** 0.7
+    g = np.abs(lp(r.standard_normal(m), 180)) + 0.3
+    return bp(r.standard_normal(m), 700, 5200) * e * g * 0.35
+
+
+def yarrow(dur, marks, yao, lines, seed=0):
+    """蓍草 (relative times): 50 stalks set down, one set aside (49); three changes, each divided, hung and counted
+    off by fours, ending on the scene's arithmetic (40, 36, 32); then the six lines of 未濟 brushed in (8 = young
+    yin: two short strokes, 7 = young yang: one stroke)."""
     r = R(seed)
     n = ns(dur)
     out = np.zeros((2, n))
 
-    def swish(t0, d):
-        m = ns(d)
-        tt = tvec(m)
-        e = np.sin(np.pi * np.clip(tt / d, 0, 1)) ** 1.5
-        x = bp(colored_noise(m, r, -1.0), 1500, 8000) * e * 0.5
-        tm = r.uniform(0, d, int(d * 260))
-        cr = spray(d, tm, r.uniform(-0.3, 0.3, len(tm)), r, f_range=(2000, 6500), decay=(0.0008, 0.003),
-                   amp=(0.2, 1.0))
+    def put(t0, x, g=1.0):
         i = ns(t0)
-        mm = min(m, n - i)
-        out[:, i:i + mm] += (P(x, 0.0) + cr * np.interp(tt, [0, d], [1, 1])[None] * e[None] * 0.9)[:, :mm]
-
+        m = min(x.shape[-1], n - i)
+        if m > 0 and i >= 0:
+            out[:, i:i + m] += (x if x.ndim == 2 else P(x, 0.0))[:, :m] * g
     times, amps, pans_ = [], [], []
-
-    def count(t0, groups):
-        tc = t0
-        for g in range(groups):
-            for j in range(4):
-                times.append(tc + j * 0.105 + r.uniform(-0.01, 0.01))
-                amps.append(r.uniform(0.5, 1.0))
-                pans_.append(-0.2 + 0.1 * g)
-            tc += 0.42 + r.uniform(-0.03, 0.05)
-        return tc
-    swish(0.15, 0.55)
-    tc = count(0.85, 4)
-    swish(tc + 0.1, 0.5)
-    count(tc + 0.75, 3)
+    put(marks[0], dry_swish(0.5, r, 0.4))                       # 50 stalks laid down
+    times.append(marks[1]); amps.append(1.0); pans_.append(0.35)  # one set aside -> 49
+    prev = marks[1] + 0.1
+    for j, end in enumerate(marks[2:]):                          # three changes
+        dsw = min(0.45, 0.3 * (end - prev))
+        put(prev, dry_swish(dsw, r, 0.5))
+        taps = 12 if j == 0 else 4
+        span = (end - 0.04) - (prev + dsw + 0.05)
+        for q in range(taps):
+            times.append(prev + dsw + 0.05 + span * q / max(taps - 1, 1) + r.uniform(-0.006, 0.006))
+            amps.append(r.uniform(0.5, 1.0) * (1.15 if q % 4 == 0 else 1.0))
+            pans_.append(-0.2 + 0.1 * (q // 4))
+        prev = end + 0.05
     kern = [wood_kernel(r, 1600, 4200, 0.007, 3) for _ in range(3)]
     out += impulses(n, times, amps, pans_, kern, r) * 0.6
+    for t0, v in zip(yao, lines):                                 # the brush
+        if v in (7, 9):
+            put(t0, brush(0.22, r), 1.0)
+        else:
+            put(t0, brush(0.09, r), 1.0)
+            put(t0 + 0.13, brush(0.09, r), 1.0)
     return out * 0.08
 
 
@@ -691,13 +716,13 @@ def _room(S, A, T):
     d0 = T['mind'] + 1.6
     rt = room_tone(d0, seed=1)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (0.6, 1.0), (T['mind'] - 0.6, 1.0), (d0, 0.0)])[None]
-    A.add(0.0, rt, -19.0, ROOM)
-    A.add(T['car'] - 0.8, distant_car(7.5, 2.4, seed=2), -29.0, {'room': 0.1, 'hall': 0.25})
+    A.add(0.0, rt, -12.0, ROOM)
+    A.add(T['car'] - 0.8, distant_car(7.5, 2.4, seed=2), -22.0, {'room': 0.1, 'hall': 0.25})
     # the answer: the same room; at 3 a.m. the fridge cycles off in the long silence
     ta, te = T['answer'], T['memory'] + 3.0
     rt = room_tone(te - ta, seed=3, fridge_off=T['fridge_off'] - ta)
     rt *= pts_env(rt.shape[1], [(0, 0.0), (T['answer_fade'], 1.0), (T['memory'] - ta, 1.0), (te - ta, 0.0)])[None]
-    A.add(ta, rt, -19.0, ROOM)
+    A.add(ta, rt, -12.0, ROOM)
 
 
 def _keys(S, T):
@@ -705,22 +730,22 @@ def _keys(S, T):
         kind = e['kind']
         if kind == 'ai':
             f = 5274.0 * (1 + 0.012 * ((k * 7) % 5 - 2))
-            S.add(e['t'], P(ai_tick(seed=k, f=f), 0.05), -16.0, {'room': 0.15, 'space': 0.12})
+            S.add(e['t'], P(ai_tick(seed=k, f=f), 0.05), -6.0, {'room': 0.15, 'space': 0.12})
             continue
         r = R(1000 + k)
         if kind == 'enter':
-            S.add(e['t'], P(laptop_key('enter', 1.0, seed=k), 0.12), -27.0, ROOM)
-            S.add(e['t'] + 0.035, P(send_tick(seed=k), 0.0), -24.0, {'room': 0.1, 'space': 0.3})
+            S.add(e['t'], P(laptop_key('enter', 1.0, seed=k), 0.12), -17.0, ROOM)
+            S.add(e['t'] + 0.035, P(send_tick(seed=k), 0.0), -16.0, {'room': 0.1, 'space': 0.3})
             continue
         if kind == 'bs':
             v = 0.85 - 0.05 * (e['i'] % 3)
-            S.add(e['t'], P(laptop_key('bs', v, seed=k), 0.2), -25.0, ROOM)
+            S.add(e['t'], P(laptop_key('bs', v, seed=k), 0.2), -15.0, ROOM)
             continue
         # memories at the end are typed more slowly and more softly than the first question
         soft = e['msg'] in T['soft_msgs']
         v = r.uniform(0.75, 1.0) * (0.8 if soft else 1.0)
         S.add(e['t'], P(laptop_key('space' if kind == 'space' else 'key', v, seed=k), r.uniform(-0.15, 0.1)),
-              -25.0, ROOM)
+              -15.0, ROOM)
 
 
 def _todata(S, A, T):
@@ -731,12 +756,12 @@ def _todata(S, A, T):
     r = R(40)
     for i, t in enumerate(ticks):
         p = -0.42 + 0.84 * i / max(m - 1, 1)
-        S.add(t, P(glass_ping(notes[i % 7], 0.75, seed=i, t60=0.8, click=0.5), p), -15.0, DATA)
+        S.add(t, P(glass_ping(notes[i % 7], 0.75, seed=i, t60=0.8, click=0.5), p), -11.0, DATA)
         tm = 0.04 + 0.30 * r.beta(2.0, 2.2, 30)
-        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -33.0, DATA)
+        S.add(t, spray(0.5, tm, p + r.normal(0, 0.1, 30), r), -29.0, DATA)
     t0 = ticks[0] + 0.25
     rise = T['mind'] + 0.1 - t0
-    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -24.0,
+    S.add(t0, whoosh(rise, 1.6, 500, 7000, seed=41, pans=(-0.3, 0.2), level=0.9, q=1.3, slope=-1.0), -20.0,
           {'space': 0.5})
 
 
@@ -810,6 +835,11 @@ def _mind(S, A, T):
 
 
 def _river(S, A, T):
+    rv = T['rv']
+    # the warm question lands in the river; later the camera dives down into it
+    S.add(rv['q_land'], P(touch_ripple('A3', 0.8, seed=89, big=True), 0.0), -16.0, {'hall': 0.2, 'space': 0.5})
+    S.add(rv['dive'], whoosh(1.0, 1.4, 250, 4500, seed=172, pans=(0.2, -0.2), level=0.8, q=1.2), -17.0,
+          {'space': 0.35})
     t0 = T['river'] - 1.5
     t1 = T['eras'][1] + 1.0
     d = t1 - t0
@@ -848,13 +878,21 @@ def _eras(S, A, T):
     q = quill(d, seed=94)
     q *= pts_env(q.shape[1], [(0, 0), (0.5, 1), (e[3] - e[2], 1), (d, 0)])[None]
     S.add(e[2] - 0.3, q, 2.0, ERA)
-    # 4. bamboo fortune sticks
-    fs = fortune_sticks(e[4] - e[3] + 0.2, seed=95)
-    S.add(e[3] + 0.1, fs, -3.0, ERA)
-    # 5. yarrow stalks
-    y = yarrow(e[5] - e[4] + 0.6, seed=96)
-    y *= pts_env(y.shape[1], [(0, 1), (e[5] - e[4], 1), (e[5] - e[4] + 0.6, 0)])[None]
-    S.add(e[4], y, 5.0, ERA)
+    rv = T['rv']
+    # 4. bamboo fortune sticks: shaken, then one stick rises
+    t4 = e[3]
+    fs = fortune_sticks(e[4] - t4 + 0.2, (rv['shake'][0] - t4, rv['shake'][1] - t4),
+                        (rv['rise'][0] - t4, rv['rise'][1] - t4), seed=95)
+    S.add(t4, fs, -3.0, ERA)
+    # 5. yarrow stalks: three changes, then the brush draws 未濟
+    t5 = e[4]
+    y = yarrow(e[5] - t5 + 0.8, [x - t5 for x in rv['yarrow']], [x - t5 for x in rv['yao']], rv['hex_lines'], seed=96)
+    y *= pts_env(y.shape[1], [(0, 1), (e[5] - t5 + 0.3, 1), (e[5] - t5 + 0.8, 0)])[None]
+    S.add(t5, y, 5.0, ERA)
+    # the camera surges through every stratum boundary
+    for k, ts in enumerate(rv['surge']):
+        S.add(ts - 0.55, whoosh(0.55, 0.7, 300, 5000, seed=170 + k, pans=(-0.4, 0.4), level=0.8, q=1.2), -17.0,
+              {'space': 0.3})
     # 6. the fire grows (and becomes the night fire of the bone scene)
     with A.layer('fire'):
         tf0, tf1 = e[5] - 1.0, T['lineage'] + 5.0
@@ -948,24 +986,67 @@ def _lineage(S, A, T):
                                    level=1.1, q=1.3), -9.0, {'space': 0.3})
 
 
+def era_flash(kind, r):
+    """A half-second glimpse of an era, passing (for the rush downstream)."""
+    d = 0.6
+    n = ns(d)
+    if kind == 'yarrow':
+        x = dry_swish(0.5, r, 0.6)
+    elif kind == 'sticks':
+        x = fortune_sticks(d, (0.0, 0.45), (0.45, 0.5), seed=int(r.integers(1 << 20))) * 1.5
+    elif kind == 'quill':
+        x = quill(d + 0.2, seed=int(r.integers(1 << 20)))[:, ns(0.12):]
+    elif kind == 'tele':
+        x = teleprinter(d, seed=int(r.integers(1 << 20)), rate=12.0)
+        mo, _ = morse('SOS', wpm=40.0)
+        x[:, :min(n, len(mo))] += P(mo[:n], -0.2)[:, :min(n, len(mo))]
+    elif kind == 'modem':
+        x = P(modem(3.0, seed=int(r.integers(1 << 20)))[ns(2.35):ns(2.35) + n], 0.0) * 1.5
+    else:
+        x = mech_typing(d, seed=int(r.integers(1 << 20)), rate=14.0)
+    x = x[:, :n]
+    if x.shape[1] < n:
+        x = np.pad(x, ((0, 0), (0, n - x.shape[1])))
+    return fade(x, 0.04, 0.2)
+
+
 def _rush(S, A, T):
+    rv = T['rv']
     t0, tc = T['rush'], T['answer']
+    tg, (cv0, cv1) = rv['ret_hold'][1], rv['converge']
+    r = R(139)
     with S.layer('rush'), A.layer('rush'):
-        times = [t0 + 1.5, t0 + 3.4, t0 + 5.0, t0 + 6.3, t0 + 7.4, t0 + 8.3, t0 + 9.1, t0 + 9.8, t0 + 10.4,
-                 t0 + 10.9, t0 + 11.35]
-        for k, tw in enumerate(times):
-            rise = 0.45 - 0.02 * k
+        # on the bank, half a second: the crack in firelight
+        f = fire(tg - t0 + 0.6, seed=138, crackle_pts=[(0, 14), (1, 6)])
+        f *= pts_env(f.shape[1], [(0, 0.0), (0.05, 1.0), (tg - t0, 0.8), (tg - t0 + 0.6, 0.0)])[None]
+        A.add(t0, f, -6.0, {'room': 0.15})
+        # downstream through the strata: a glimpse of each era as the camera passes its boundary
+        kinds = ['yarrow', 'sticks', 'quill', 'tele', 'modem', 'keys']
+        for k, (tb_, kd) in enumerate(zip(rv['ret_eras'], kinds)):
             sgn = 1 if k % 2 else -1
-            S.add(tw - rise, whoosh(rise, 0.5, 300, 7000, seed=140 + k, pans=(0.8 * sgn, -0.8 * sgn), level=0.9),
-                  -10.0 + 0.4 * k, {'space': 0.2})
+            S.add(tb_ - 0.45, whoosh(0.45, 0.5, 300, 7000, seed=140 + k, pans=(0.8 * sgn, -0.8 * sgn), level=0.9),
+                  -10.0 + 0.5 * k, {'space': 0.2})
+            x = era_flash(kd, r)
+            S.add(tb_ - 0.1, x * pts_env(x.shape[1], [(0, 0.3), (0.15, 1.0), (0.6, 0.6)])[None], -4.0,
+                  {'room': 0.2, 'hall': 0.2})
+        for k, tw in enumerate([167.9, 168.7, 169.4]):
+            sgn = 1 if k % 2 else -1
+            S.add(tw - 0.4, whoosh(0.4, 0.45, 300, 7000, seed=150 + k, pans=(0.8 * sgn, -0.8 * sgn), level=0.9),
+                  -8.0, {'space': 0.2})
+        # the hair-thin lines converge into the question: a fine shimmer narrowing to the centre
+        d = cv1 - cv0
+        tm = np.sort(r.uniform(0, d, int(d * 120)))
+        pn = np.interp(tm, [0, d], [0.9, 0.0]) * r.choice([-1, 1], len(tm))
+        sp = spray(d + 0.1, tm, pn, r, f_range=(4000, 9000), decay=(0.002, 0.006), amp=(0.2, 0.8))
+        S.add(cv0, sp, -20.0, {'space': 0.4})
         # the final suck back into the question, cut at the answer
-        d = 1.6
-        sw = whoosh(d, 0.4, 400, 9000, seed=160, pans=(-0.2, 0.2), level=1.2, q=1.4, slope=-1.0)
-        S.add(tc - d, sw[:, :ns(d)], -5.0, {'space': 0.2})
-        w = whisper_field(tc - t0 + 0.5, 34, seed=150, syl=(0.05, 0.12), phrase=(0.4, 1.4), gap=(0.05, 0.5),
-                          flow=1.6, env_pts=[(0, 0), (1.0, 0.7), (tc - t0 - 2, 1.0), (tc - t0, 1.3),
-                                             (tc - t0 + 0.5, 0)])
-        A.add(t0, w, -9.0, {'hall': 0.2, 'space': 0.3})
+        dd = 1.6
+        sw = whoosh(dd, 0.4, 400, 9000, seed=160, pans=(-0.2, 0.2), level=1.2, q=1.4, slope=-1.0)
+        S.add(tc - dd, sw[:, :ns(dd)], -5.0, {'space': 0.2})
+        w = whisper_field(cv0 - tg + 0.5, 34, seed=150, syl=(0.05, 0.12), phrase=(0.4, 1.4), gap=(0.05, 0.5),
+                          flow=1.6, env_pts=[(0, 0), (0.8, 0.7), (cv0 - tg - 2, 1.0), (cv0 - tg, 1.2),
+                                             (cv0 - tg + 0.5, 0)])
+        A.add(tg, w, -9.0, {'hall': 0.2, 'space': 0.3})
 
 
 def _answer(S, A, T):
@@ -974,10 +1055,15 @@ def _answer(S, A, T):
     for k, tl in enumerate(T['lifts']):
         nts = sets[min(k, 2)]
         for j, (dt, v) in enumerate([(0.0, 0.85), (0.14, 0.7), (0.31, 0.62), (0.55, 0.5)]):
-            S.add(tl + dt, P(wind_chime(nts[j], v, seed=300 + 10 * k + j), -0.15 + 0.12 * j), -11.0,
+            S.add(tl + dt, P(wind_chime(nts[j], v, seed=300 + 10 * k + j), -0.15 + 0.12 * j), -7.0,
                   {'hall': 0.25, 'space': 0.55})
-        S.add(tl, whoosh(0.7, 1.2, 800, 4500, seed=310 + k, pans=(-0.1, 0.25), level=0.5, q=1.4), -22.0,
+        S.add(tl, whoosh(0.7, 1.2, 800, 4500, seed=310 + k, pans=(-0.1, 0.25), level=0.5, q=1.4), -18.0,
               {'space': 0.4})
+    # the three sentences are written into the warm river
+    for k, tw in enumerate(T['rv']['mem_write']):
+        sp = spray(1.2, np.sort(R(330 + k).uniform(0, 1.0, 40)), np.linspace(-0.5, 0.5, 40), R(331 + k),
+                   f_range=(2500, 6000), decay=(0.003, 0.01), amp=(0.2, 0.7))
+        S.add(tw, sp, -26.0, {'hall': 0.3, 'space': 0.5})
     # the memory river: the same voices, now warm and near, murmuring
     tm0, tm1 = T['memory'] - 1.0, T['memory_end']
     with A.layer('mem'):

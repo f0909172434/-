@@ -178,6 +178,36 @@ def bone_sync():
     return B
 
 
+def river_sync():
+    """Sync points of the finished river scene (film/src/scenes/river.js, film/src/lib/riverrig.js), absolute times."""
+    V = dict(q_land=49.4, dive=56.4, surge=[70, 74, 78, 82, 86, 92.3], era_mid=[72, 76, 80, 84, 89, 96],
+             shake=(82.2, 83.4), rise=(83.25, 83.95), yarrow=[86.4, 87.0, 88.55, 89.15, 89.7],
+             yao=[89.95, 90.3, 90.62, 90.94, 91.26, 91.58], hex_lines=[8, 7, 8, 7, 8, 7],
+             ret_hold=(160.0, 160.5), ret_eras=[161.04, 161.98, 163.22, 164.40, 165.64, 166.98],
+             converge=(170.0, 171.4), mem_write=[216.6, 217.9, 219.6], src='reported')
+    try:
+        rig = open(os.path.join(ROOT, 'film', 'src', 'lib', 'riverrig.js'), encoding='utf-8').read()
+        js = open(os.path.join(ROOT, 'film', 'src', 'scenes', 'river.js'), encoding='utf-8').read()
+        arr = lambda src, nm: [float(x) for x in re.findall(NUM, re.search(r'const ' + nm + r' = \[(.*?)\];', src).group(1))]
+        V['era_mid'] = arr(rig, 'ERA_MID')
+        sg = re.search(r'const SURGE = \[(.*)\];', rig).group(1)
+        V['surge'] = [float(m[0]) for m in re.findall(r'\[' + NUM + r',\s*' + NUM + r',\s*' + NUM + r'\]', sg)]
+        V['yao'] = arr(js, 'YAO_T')
+        V['yarrow'] = [float(m) for m in re.findall(r"note\('[^']*',\s*-?[\d.]+,\s*-?[\d.]+,\s*" + NUM, js)][:5]
+        m = re.search(r'G > ' + NUM + r' && G < ' + NUM + r' \? Math\.sin', js)
+        V['shake'] = (float(m.group(1)), float(m.group(2)))
+        m = re.search(r'const rise = easeInOutCubic\(smoothstep\(' + NUM + r',\s*' + NUM, js)
+        V['rise'] = (float(m.group(1)), float(m.group(2)))
+        m = re.search(r'const g0 = ' + NUM + r', g1 = ' + NUM, js)
+        V['q_land'] = float(m.group(2))
+        dat = open(os.path.join(ROOT, 'film', 'src', 'lib', 'riverdata.js'), encoding='utf-8').read()
+        V['hex_lines'] = [int(x) for x in re.search(r'HEX = \{[^}]*lines: \[([\d,\s]+)\]', dat).group(1).split(',')]
+        V['src'] = 'river.js'
+    except Exception as e:  # pragma: no cover
+        V['src'] = f'reported ({e})'
+    return V
+
+
 def chat_events(tl):
     """Keystrokes exactly as overlay.js msgState() reveals the text: type (first char at t0, then the
     per-char delay: array entry i, or its last entry, or a constant), del (one backspace every dt), send."""
@@ -275,6 +305,7 @@ def load_times(path):
                  cue_num('dives', NUM + r'\s*[-–]\s*' + NUM + r' the camera dives', 45.0, group=2))
     T['river_card'] = card('ai', T['river'], T['river'] + 20, 50.0)
     T['mind_sync'] = mind_sync(T['mind'])
+    T['rv'] = river_sync()
     # eras (upstream)
     era_keys = [('modem', 70), ('teleprinter', 74), ('quill', 78), ('bamboo', 82), ('yarrow', 86), ('fire crackle', 92)]
     T['eras'] = [cue_num('UPSTREAM', NUM + r'\s+(?:dry\s+)?' + k.split()[0], d) for k, d in era_keys]
@@ -379,7 +410,7 @@ def main():
 
     tc, ta, tm1 = T['crack'], T['answer'], T['memory_end']
     lay_pre = (T['eras'][4] - 2.0, tc + 1.0)
-    lay_rush = (T['rush'] - 2.0, ta + 0.5)
+    lay_rush = (T['rush'] - 2.0, ta + 2.0)
     lay_mem = (T['lifts'][0] - 1.0 if T['lifts'] else T['memory'] - 3.0, tm1 + 4.0)
     M = mix.Bus('music', n, {'pre': lay_pre, 'rush': lay_rush, 'mem': lay_mem})
     S = mix.Bus('sfx', n, {'pre': lay_pre, 'rush': lay_rush})

@@ -135,7 +135,7 @@ def _listening_tone(M, t0, t1, peak_t, db):
 
 def _listening(M, T):
     # the AI's caret: silence, and a very faint high tone, as if something is listening
-    _listening_tone(M, T['ai_caret'], T['mind'] + 1.4, T['todata'][0], -12.0)
+    _listening_tone(M, T['ai_caret'], T['mind'] + 1.4, T['todata'][0], -7.0)
 
 
 def _mind(M, T):
@@ -482,8 +482,10 @@ def _soft_kick(pitch, vel):
 
 # ----------------------------------------------------------------------------
 def _rush(M, T):
-    t0, tc = T['rush'], T['answer']
-    D = tc - t0
+    rv = T['rv']
+    t0, tc = rv['ret_hold'][1], T['answer']   # half a second on the bank, then downstream
+    cv0, cv1 = rv['converge']                  # the threads converge into the question: the pulse stops
+    D = cv0 - t0
     # tempo map: 120 -> 184 bpm (exponential)
     ts = np.linspace(0, D, 4000)
     bpm = 120.0 * (184.0 / 120.0) ** (ts / D)
@@ -519,15 +521,15 @@ def _rush(M, T):
         k += 1
         s += 1
     # the question rushing back (two statements, the second an octave up)
-    for j, (b0, octv, db_) in enumerate([(1.0, 0, -6.0), (16.0, 1, -8.0)]):
+    for j, (b0, octv, db_) in enumerate([(1.0, 0, -6.0), (12.0, 1, -8.0)]):
         notes = [(tb(b0 + 0.5 * bb), (tb(b0 + 0.5 * (bb + dd)) - tb(b0 + 0.5 * bb)) * 0.95, m_(p, octv), 0.9)
                  for (bb, dd), p in zip(Q_RHY, Q)]
         line(M, 'str', notes, db_, BIG, 900 + j, sec='vln', rel=0.8, att=0.08, bright=0.8)
         line(M, 'str', [(t, d, mm - 12, v) for t, d, mm, v in notes], db_ - 3, BIG, 910 + j, sec='vla', rel=0.8,
              att=0.08, bright=0.7)
-    # the swell: strings + choir, rising, moving onto the dominant (E major), unresolved at the cut
-    ts0 = tb(16.0)
-    t_e = tb(28.0) if nbeats > 28.5 else tc - 1.5
+    # the swell: strings + choir, rising, moving onto the dominant (E major) as the question forms; unresolved at the cut
+    ts0 = tb(12.0)
+    t_e = cv0
     d = tc - ts0
     up = [(0, 0.35), (d - 0.3, 1.0), (d, 1.0)]
     swell = [['E5', 'E5'], ['A5', 'G#5'], ['C6', 'B5']]
@@ -539,6 +541,11 @@ def _rush(M, T):
     M.add(t_e, strings_chord(['E2', 'B2', 'E3', 'G#3'], tc - t_e, 'vc', att=0.3, rel=0.05, seed=922,
                              dyn=[(0, 0.8), (tc - t_e, 1.0)]), -6.0, BIG)
     M.add(t_e, choir(['E3', 'B3', 'E4', 'G#4', 'B4'], tc - t_e, 'a', att=0.25, rel=0.05, seed=923), -7.0, HUGE)
+    # the warm question forms out of the converging threads: its seven notes, once, in glass and piano
+    for i, p in enumerate(Q):
+        t = cv0 + (cv1 - cv0) * i / 6.0
+        M.add(t, P(glass_ping(m_(p, 1), 0.7, seed=940 + i, t60=1.4, click=0.2), -0.3 + 0.1 * i), -6.0, DATA)
+        pno(M, t + 0.005, m_(p, 1), 0.42, 0.5, db=6.0, send=BIG, seed=950 + i)
     sh = shepard(tc - (t0 + 4.0), [(0, 0.12), (tc - t0 - 4.0, 0.45)], seed=930)
     sh *= pts_env(sh.shape[1], [(0, 0.0), (3, 0.4), (tc - t0 - 4.0, 1.0)])[None]
     M.add(t0 + 4.0, sh, -10.0, BIG)
@@ -547,21 +554,21 @@ def _rush(M, T):
 # ----------------------------------------------------------------------------
 def _answer(M, T):
     # the AI's caret again: the faint listening tone, until it begins to type
-    _listening_tone(M, T['ai_caret2'], T['ai_first'] + 2.0, T['ai_first'], -15.0)
+    _listening_tone(M, T['ai_caret2'], T['ai_first'] + 2.0, T['ai_first'], -10.0)
     # 'someone loves someone very much': the softest statement of the question, on the piano
     t0 = T['loves']
     b = 0.85
     for j, (p, v) in enumerate([('F2', 0.18), ('C3', 0.16), ('A3', 0.15)]):
-        pno(M, t0 + 0.04 * j, p, v, 3.3, db=3.0, seed=70 + j)
+        pno(M, t0 + 0.04 * j, p, v, 3.3, db=7.0, seed=70 + j)
     mel = motif(Q, t0 + 0.15, b, 0.27, last=5.0)
     for i, (t, d, mm, v) in enumerate(mel):
-        pno(M, t, mm, v * (0.9 if i in (3, 5) else 1.0), d, db=3.0, seed=80 + i)
+        pno(M, t, mm, v * (0.9 if i in (3, 5) else 1.0), d, db=7.0, seed=80 + i)
     tA = mel[3][0]
     for j, (p, v) in enumerate([('A2', 0.15), ('E3', 0.13)]):
-        pno(M, tA + 0.05 * j, p, v, 2.5, db=3.0, seed=90 + j)
+        pno(M, tA + 0.05 * j, p, v, 2.5, db=7.0, seed=90 + j)
     tD = mel[6][0]
     for j, (p, v) in enumerate([('D3', 0.14), ('A3', 0.12), ('F4', 0.11)]):
-        pno(M, tD + 0.06 * j, p, v, 4.5, db=3.0, seed=95 + j)
+        pno(M, tD + 0.06 * j, p, v, 4.5, db=7.0, seed=95 + j)
 
 
 # ----------------------------------------------------------------------------
@@ -623,6 +630,9 @@ def _memory(M, T):
          morph=('a', [(0, 0.3), (5, 1.0)]))
     for i, (t, d, mm, v) in enumerate(song):
         pno(M, t + 0.012, mm + 12, 0.42 if i < 7 else 0.36, min(d, 2.5), db=8.0, send=BIG, seed=110 + i)
+    # the three sentences written into the river: warm glass swells (F#m7 tones)
+    for k, (tw, p) in enumerate(zip(T['rv']['mem_write'], ['C#5', 'E5', 'A5'])):
+        M.add(tw, P(bowed_glass([(0, p)], 2.2, att=0.35, rel=1.6, seed=1080 + k), -0.3 + 0.3 * k), -12.0, HUGE)
     # choir pad (oo -> ah) under the second half
     for k in range(3, 8):
         c = seq[k]
