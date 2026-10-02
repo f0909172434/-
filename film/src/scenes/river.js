@@ -95,7 +95,6 @@ export default class RiverScene {
     this.buildSource();
     this.buildConverge();
 
-    console.warn('[river-stats]', JSON.stringify({ tfR: [this.tfR.strings, this.tfR.total], tfG: [this.tfG.strings, this.tfG.total], tfM: [this.tfM.strings, this.tfM.total], tfMG: [this.tfMG.strings, this.tfMG.total] }));
     for (const m of [this.streams.mesh, this.fire, this.crackGlow.mesh, this.crackCore.mesh, this.plR.mesh, this.plM.mesh,
       this.tfR.mesh, this.tfG.mesh, this.tfM.mesh, this.tfMG.mesh, this.tfH.mesh, this.exLines.mesh, this.stalks.mesh, this.yao.mesh, this.tfW.mesh,
       this.conv.mesh, this.tfB.mesh, this.tfL.mesh]) this.scene.add(m);
@@ -716,7 +715,7 @@ export default class RiverScene {
     if (!S) return out;
     const ut = G - G_REF, [a, b, fi, fo] = S.show;
     const vis = Math.min(smoothstep(a, a + fi, ut), 1 - smoothstep(b - fo, b, ut));
-    if (vis <= 0.002) return out;
+    if (vis <= 0.002) { if (this.stickTop) this.stickTop = { ...this.stickTop, vis: 0, rise: 0 }; return out; }
     const shake = G > 82.2 && G < 83.4 ? Math.sin((G - 82.2) * 34) * Math.exp(-Math.pow(G - 82.8, 2) * 6) : 0;
     const rise = easeInOutCubic(smoothstep(83.25, 83.95, G));
     for (let i = 0; i < S.n; i++) {
@@ -885,8 +884,8 @@ export default class RiverScene {
           this.tfH.uniforms.uFocus.value = ef;
           for (const f of [this.exLines, this.stalks, this.yao]) f.uniforms.uFocus.value = ef;
           this.exLines.setPolylines([...this.exhibitLines(ue), ...this.stickLines(G)]);
-          const st = this.stickTop;
-          if (st && G > 82 && G < 86.5) this.tfH.update(this.stickLabel, { pos: this.stickRig.pl.P(st.x, st.y), intensity: 0.9 * st.rise * st.vis });
+          const st = this.stickTop;   // set by stickLines() for this G (zero intensity outside the temple)
+          if (st) this.tfH.update(this.stickLabel, { pos: this.stickRig.pl.P(st.x, st.y), intensity: 0.9 * st.rise * st.vis });
           this.stalks.setPolylines(this.stalkLines(G)); this.yao.setPolylines(this.yaoLines(G));
           this.tfH.cull(cam, ue, fk);
           this.tfH.mesh.visible = this.exLines.mesh.visible = this.stalks.mesh.visible = this.yao.mesh.visible = true;
@@ -903,7 +902,7 @@ export default class RiverScene {
         this.updateConverge(G, R);
       }
       post = mode === 'return'
-        ? { bloomStrength: 0.4, bloomThreshold: 0.9, streak: 0.06, halation: 0.05, vignette: 0.4, grain: 0.014 }
+        ? { bloomStrength: 0.4, bloomThreshold: 0.9, streak: 0.0, halation: 0.05, vignette: 0.4, grain: 0.014 }
         : { bloomStrength: lerp(0.32, 0.5, fireK), bloomThreshold: 0.95, streak: 0.0, halation: lerp(0.03, 0.12, fireK), vignette: 0.38, grain: 0.014 };
     }
     return { scene: this.scene, camera: cam, post };
