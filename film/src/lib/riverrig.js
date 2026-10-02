@@ -101,20 +101,21 @@ export function rigUp(G, river) {
 
 // return: rush downstream from the source to the present (160 -> 172)
 const RET = {
-  // sc as a function of G (accelerate out of the cut, cruise, brake into the convergence)
-  s: [[159, 6], [160, 9], [161.5, 22], [168.5, 104], [170.3, 116.5], [171.3, 118.4], [172.5, 119]],
-  n: [[159, 2.2], [164, 3.0], [168, 3.6], [171, 4.4], [173, 4.4]],
-  h: [[159, 0.9], [164, 1.1], [168, 1.4], [171, 1.7], [173, 1.7]],
-  psi: [[159, 104], [166, 100], [169.5, 96], [171, 90], [173, 90]],
-  phi: [[159, -3.5], [168, -4.5], [169.8, -4.0], [171.2, 1.8], [173, 2.2]],
-  fov: [[159, 27], [168, 26], [171.5, 24], [173, 24]],
+  // opens beside the source (the crack in firelight), swings downstream and rushes to the present, brakes, looks up
+  s: [[159, -1.9], [160, -1.6], [161, 1.2], [162.2, 9], [168.5, 100], [170.3, 113], [171.3, 115.6], [172.5, 116.4]],
+  a: [[159, 0], [161, 0.2], [162.5, 0.45], [173, 0.45]],
+  b: [[159, 3.4], [160, 3.3], [161.2, 1.4], [162.5, 0.3], [173, 0.3]],
+  h: [[159, 3.1], [160, 3.0], [161.4, 1.7], [162.6, 1.0], [168, 1.05], [171, 1.5], [173, 1.5]],
+  psi: [[159, 92], [160, 92], [161.2, 118], [162.4, 146], [168.5, 152], [170, 142], [171.4, 130], [173, 128]],
+  phi: [[159, -44], [160, -42], [161.2, -20], [162.4, -6.5], [168.5, -5], [169.8, -4.0], [171.2, 2.0], [173, 2.2]],
+  fov: [[159, 30], [161, 30], [162.5, 31], [168, 30], [171.5, 26], [173, 26]],
 };
 // memory: the warm river; the camera drifts downstream with the human's sentences, rises at the peak
 const MEM = {
   s: [[211, 96], [245, 112.2]],
-  a: [[211, 0.72], [226, 0.7], [236, 1.0], [246, 1.05]],          // lateral: a * half + b
-  b: [[211, 0.4], [226, 0.5], [236, 2.4], [246, 2.8]],
-  h: [[211, 1.5], [222, 1.4], [228, 1.85], [236, 3.2], [246, 3.6]],
+  a: [[211, 0.72], [226, 0.7], [236, 0.85], [246, 0.9]],          // lateral: a * half + b
+  b: [[211, 0.4], [226, 0.5], [236, 1.3], [246, 1.6]],
+  h: [[211, 1.5], [222, 1.4], [228, 1.8], [236, 2.7], [246, 3.0]],
   back: [[211, -2.6], [246, -3.2]],                                 // camera s relative to the stanza centre
   lift: [[211, 0.02], [226, 0.04], [236, 0.62], [246, 0.7]],         // aim above (+) the stanza: it sinks as the view opens
   fov: [[211, 25], [246, 26]],
@@ -123,7 +124,7 @@ const MEM = {
 export const STANZA = { s0: 98.6, v: (112.2 - 96) / 34, n: -1.1, h: 0.37, w: 1.98, g0: 212 };
 
 function rigKeys(K, G, river) {
-  const sc = track(K.s, G), f = river.at(sc), nc = f.half + track(K.n, G), h = track(K.h, G);
+  const sc = track(K.s, G), f = river.at(sc), nc = K.a ? f.half * track(K.a, G) + track(K.b, G) : f.half + track(K.n, G), h = track(K.h, G);
   const a = track(K.psi, G) * Math.PI / 180;
   return {
     x: f.x + f.nx * nc, y: h, z: f.z + f.nz * nc,

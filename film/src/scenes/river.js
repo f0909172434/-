@@ -53,7 +53,7 @@ export default class RiverScene {
     this.tfR.setPaths([path], { samples: 1200 });
     this.tfH = new TextField(ctx, { atlas: this.atlas, focus: 9, aperture: 0.05, maxBlur: 20, fade: [0.5, 1.5, 0, 0] });
     this.tfW = new TextField(ctx, { atlas: this.atlas, focus: 6, aperture: 0.16, maxBlur: 40, fade: [0.35, 1.2, 0, 0] });
-    this.tfM = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.045, maxBlur: 22, fade: [1.4, 3.6, 50, 80] });
+    this.tfM = new TextField(ctx, { atlas: this.atlas, focus: 12, aperture: 0.045, maxBlur: 22, fade: [2.6, 5.2, 50, 80] });
     this.tfM.setPaths([path], { samples: 1200 });
     this.tfB = new TextField(ctx, { atlas: this.atlasBig, focus: 10, aperture: 0.04, maxBlur: 20, fade: [0.4, 1.2, 0, 0] });
     this.tfB.setPaths([path], { samples: 1200 });
@@ -71,7 +71,7 @@ export default class RiverScene {
 
     const M = this.buildMemory();
     await this.tfM.prepare(M.items); this.tfM.set(M.items);
-    this.plM = new PathLines({ resolution: this.res, tf: this.tfM, aperture: 0.045, fade: [1.4, 3.6, 50, 80] });
+    this.plM = new PathLines({ resolution: this.res, tf: this.tfM, aperture: 0.045, fade: [2.6, 5.2, 50, 80] });
     this.plM.set(M.segs);
 
     const Wc = this.buildWarm();
@@ -372,7 +372,7 @@ export default class RiverScene {
         if (k < 0.5) {
           const [lang, q] = pickQ(), hero = r.next() < 0.18;
           const it = { text: q, font: D.LATIN.has(lang) ? 'latin' : 'sans', weight: 400, size: hero ? r.range(0.13, 0.17) : r.range(0.065, 0.1), anchor: [0, 0],
-            color: r.next() < 0.1 ? PAL.si : PAL.line, intensity: hero ? 0.95 : r.range(0.45, 0.75) };
+            color: r.next() < 0.04 ? PAL.si : PAL.line, intensity: hero ? 0.9 : r.range(0.42, 0.7) };
           len = this.tfM.measure(it).width * it.size; put(it, s, n, h);
         } else if (k < 0.62) {
           const it = { text: D.MAIL_SUBJ[r.int(0, 9)], font: 'mono', size: r.range(0.06, 0.09), anchor: [0, 0], color: PAL.line, intensity: 0.65 };
@@ -574,7 +574,7 @@ export default class RiverScene {
 
     // E5 · 800 BCE · forty-nine stalks: divided, hung, counted by fours; six lines drawn: 未濟
     {
-      const pl = this.plate(88.9, 5.0, 940, 405), show = [T(86.0), T(92.6), 0.5, 0.8];
+      const pl = this.plate(90.6, 5.0, 900, 405), show = [T(86.0), T(92.6), 0.5, 0.8];
       this.yarrowPl = pl;
       add(pl, { text: D.XICI, font: 'serif', size: 0.055, tracking: 0.25, anchor: [0, 0.5], color: PAL.line, intensity: 0.55, show: [T(86.3), T(92.6), 0.6, 0.8] }, -1.42, 0.62);
       this.yarrowNotes = [];
@@ -844,7 +844,7 @@ export default class RiverScene {
         const ue = G - G_REF;
         this.tfH.uniforms.uTime.value = ue;
         if (G > 69 && G < 93) {
-          const pls = this.ex.ex, keys = [[72, pls.mail], [76, pls.tape], [80, pls.letter], [84, pls.temple], [88.9, pls.yarrow]];
+          const pls = this.ex.ex, keys = [[72, pls.mail], [76, pls.tape], [80, pls.letter], [84, pls.temple], [89.5, pls.yarrow]];
           let best = keys[0][1], bd = 1e9; for (const [tk, pl] of keys) if (Math.abs(G - tk) < bd) { bd = Math.abs(G - tk); best = pl; }
           const ef = Math.hypot(best.O[0] - R.x, best.O[1] - R.y, best.O[2] - R.z);
           this.tfH.uniforms.uFocus.value = ef;
