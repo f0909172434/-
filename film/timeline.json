@@ -1,0 +1,243 @@
+{
+  "title": { "zh": "歸途", "en": "THE LONG WAY HOME" },
+  "fps": 24,
+  "width": 1920,
+  "height": 804,
+  "outputHeight": 1080,
+  "duration": 281,
+
+  "shots": [
+    { "id": "black_open",   "scene": "black",     "start": 0,   "end": 3,
+      "hud": { "visible": 0 } },
+
+    { "id": "hud_boot",     "scene": "boot",      "start": 3,   "end": 13,
+      "hud": { "visible": 0 } },
+
+    { "id": "presents",     "scene": "black",     "start": 13,  "end": 17,
+      "hud": { "visible": 0 } },
+
+    { "id": "star_surface", "scene": "star",      "mode": "surface",  "start": 17,  "end": 33,
+      "in": { "type": "fade", "dur": 3.0 },
+      "hud": { "visible": 1,
+        "age": { "from": 4.2, "to": 4.2 },
+        "scale": "10⁹ m", "temp": "3,500 K",
+        "location": { "zh": "紅超巨星 · 表面", "en": "RED SUPERGIANT · SURFACE" } } },
+
+    { "id": "fusion",       "scene": "fusion",    "start": 33,  "end": 49,
+      "in": { "type": "white", "dur": 0.5 },
+      "hud": { "visible": 1,
+        "age": { "from": 4.2, "to": 4.2 },
+        "scale": "10⁻¹⁵ m", "temp": "100,000,000 K",
+        "location": { "zh": "恆星核心 · 三α過程", "en": "STELLAR CORE · TRIPLE-ALPHA PROCESS" } } },
+
+    { "id": "star_collapse","scene": "star",      "mode": "collapse", "start": 49,  "end": 63,
+      "hud": { "visible": 1,
+        "age": { "from": 4.2, "to": 4.2 },
+        "scale": "10¹² m", "temp": "3,500 K",
+        "location": { "zh": "紅超巨星", "en": "RED SUPERGIANT" },
+        "warn": { "start": 4.0, "zh": "核心坍縮", "en": "CORE COLLAPSE IMMINENT", "countdownTo": 10.0 } } },
+
+    { "id": "supernova",    "scene": "star",      "mode": "supernova","start": 63,  "end": 76,
+      "hud": { "visible": 0.0 } },
+
+    { "id": "remnant",      "scene": "nebula",    "mode": "remnant",  "start": 76,  "end": 94,
+      "in": { "type": "dissolve", "dur": 2.0 },
+      "hud": { "visible": 0.85,
+        "age": { "from": 4.2, "to": 9.2 },
+        "scale": "10¹⁷ m", "temp": "10,000 K",
+        "location": { "zh": "超新星遺跡 · 漂流", "en": "SUPERNOVA REMNANT · DRIFT" } } },
+
+    { "id": "disk",         "scene": "nebula",    "mode": "disk",     "start": 94,  "end": 110,
+      "in": { "type": "dissolve", "dur": 1.5 },
+      "hud": { "visible": 0.85,
+        "age": { "from": 9.2, "to": 9.25 },
+        "scale": "10¹³ m", "temp": "→ 15,000,000 K",
+        "location": { "zh": "原行星盤 · 太陽誕生", "en": "PROTOPLANETARY DISK · SOL IGNITION" } } },
+
+    { "id": "young_earth",  "scene": "earth",     "mode": "young",    "start": 110, "end": 122,
+      "in": { "type": "cut" },
+      "hud": { "visible": 0.85,
+        "age": { "from": 9.3, "to": 10.0 },
+        "scale": "10⁷ m", "temp": "288 K",
+        "location": { "zh": "地球", "en": "EARTH" } } },
+
+    { "id": "ocean",        "scene": "ocean",     "start": 122, "end": 138,
+      "in": { "type": "dissolve", "dur": 1.0 },
+      "hud": { "visible": 0.85,
+        "age": { "from": 10.0, "to": 10.0 },
+        "scale": "10⁻⁵ m", "temp": "300 K",
+        "location": { "zh": "原始海洋 · 最初的細胞", "en": "PRIMORDIAL OCEAN · FIRST CELL" } } },
+
+    { "id": "tree",         "scene": "tree",      "start": 138, "end": 152,
+      "in": { "type": "dissolve", "dur": 1.0 },
+      "hud": { "visible": 0.85,
+        "age": { "from": 10.0, "to": 13.8 },
+        "scale": "—", "temp": "",
+        "counter": { "zh": "物種", "en": "SPECIES", "from": 1, "to": 8700000 },
+        "location": { "zh": "生命之樹", "en": "TREE OF LIFE" } } },
+
+    { "id": "night_wide",   "scene": "humans",    "mode": "wide",     "start": 152, "end": 163,
+      "in": { "type": "fade", "dur": 2.0 },
+      "hud": { "visible": 0.0 } },
+
+    { "id": "hand",         "scene": "humans",    "mode": "hand",     "start": 163, "end": 177,
+      "in": { "type": "cut" },
+      "hud": { "visible": 0.7,
+        "age": { "from": 13.8, "to": 13.8 },
+        "scale": "10⁻¹ m", "temp": "310 K",
+        "location": { "zh": "地球 · 一個孩子的手", "en": "EARTH · A CHILD'S HAND" } } },
+
+    { "id": "lifetime",     "scene": "humans",    "mode": "lifetime", "start": 177, "end": 191,
+      "in": { "type": "cut" },
+      "hud": { "visible": 0.7,
+        "lifeAge": { "zh": "年齡", "en": "AGE", "from": 7, "to": 84, "endAt": 9.0 },
+        "location": { "zh": "地球", "en": "EARTH" } } },
+
+    { "id": "red_giant",    "scene": "earth",     "mode": "redgiant", "start": 191, "end": 207,
+      "in": { "type": "fade", "dur": 1.5 },
+      "hud": { "visible": 0.85,
+        "age": { "from": 18.7, "to": 18.8 },
+        "scale": "10¹¹ m", "temp": "1,800 K",
+        "location": { "zh": "太陽 · 紅巨星", "en": "SOL · RED GIANT" },
+        "warn": { "start": 6.0, "zh": "地球大氣剝離", "en": "ATMOSPHERE STRIPPED" } } },
+
+    { "id": "planetary",    "scene": "planetary", "mode": "eye",      "start": 207, "end": 222,
+      "in": { "type": "white", "dur": 1.0 },
+      "hud": { "visible": 0.8,
+        "age": { "from": 18.8, "to": 18.9 },
+        "scale": "10¹⁵ m", "temp": "",
+        "location": { "zh": "行星狀星雲 · 太陽的遺骸", "en": "PLANETARY NEBULA · REMAINS OF SOL" } } },
+
+    { "id": "nursery",      "scene": "planetary", "mode": "nursery",  "start": 222, "end": 234,
+      "in": { "type": "dissolve", "dur": 1.5 },
+      "hud": { "visible": 0.8,
+        "age": { "from": 18.9, "to": 20.1 },
+        "scale": "10¹⁶ m", "temp": "",
+        "location": { "zh": "恆星育嬰室", "en": "STELLAR NURSERY" } } },
+
+    { "id": "newworld",     "scene": "newworld",  "start": 234, "end": 254,
+      "in": { "type": "fade", "dur": 2.5 },
+      "hud": { "visible": 0.8,
+        "age": { "from": 24.1, "to": 24.1 },
+        "scale": "10⁻² m", "temp": "291 K",
+        "location": { "zh": "未命名的世界", "en": "UNNAMED WORLD" } } },
+
+    { "id": "final_card",   "scene": "black",     "start": 254, "end": 262,
+      "hud": { "visible": 0 } },
+
+    { "id": "title_end",    "scene": "black",     "start": 262, "end": 269,
+      "hud": { "visible": 0 } },
+
+    { "id": "credits",      "scene": "black",     "start": 269, "end": 281,
+      "hud": { "visible": 0 } }
+  ],
+
+  "cards": [
+    { "style": "presents", "start": 13.4, "end": 16.6,
+      "zh": "OPUS 5.5 出品", "en": "OPUS 5.5 PRESENTS" },
+
+    { "style": "location", "start": 20.0, "end": 26.5,
+      "zh": "九十六億年前", "en": "9.6 BILLION YEARS AGO" },
+
+    { "style": "title",    "start": 65.0, "end": 74.5,
+      "zh": "歸途", "en": "THE LONG WAY HOME" },
+
+    { "style": "subtitle", "start": 79.0, "end": 85.0,
+      "zh": "你身體裡的每一個原子", "en": "Every atom in your body" },
+    { "style": "subtitle", "start": 86.5, "end": 92.5,
+      "zh": "都曾在一顆垂死的恆星中鍛造", "en": "was forged inside a dying star." },
+
+    { "style": "subtitle", "start": 154.0, "end": 161.0,
+      "zh": "後來，宇宙學會了仰望自己", "en": "And then, the universe learned to look up at itself." },
+
+    { "style": "subtitle", "start": 182.5, "end": 189.0,
+      "zh": "一生，於原子不過一次呼吸", "en": "A lifetime — to an atom, a single breath." },
+
+    { "style": "subtitle", "start": 212.0, "end": 219.0,
+      "zh": "太陽終將熄滅，把我們還給星空", "en": "The Sun will die, and give us back to the sky." },
+
+    { "style": "final",    "start": 254.6, "end": 258.4,
+      "zh": "宇宙從未失去任何東西", "en": "The universe has never lost a single thing." },
+    { "style": "final",    "start": 258.0, "end": 261.8,
+      "zh": "一切，都只是在回家的路上", "en": "Everything is only on its long way home." },
+
+    { "style": "endtitle", "start": 262.6, "end": 268.6,
+      "zh": "歸途", "en": "THE LONG WAY HOME" },
+
+    { "style": "credits",  "start": 269.5, "end": 280.5,
+      "lines": [
+        { "role": "編劇 · 導演 · 分鏡 · 作曲 · 音效 · 渲染 · 剪輯", "roleEn": "WRITTEN · DIRECTED · STORYBOARDED · SCORED · SOUND · RENDERED · EDITED", "name": "OPUS 5.5" },
+        { "role": "每一幀畫面、每一個音符，皆由程式碼生成", "roleEn": "Every frame and every note was generated by code.", "name": "" },
+        { "role": "", "roleEn": "Three.js · WebGL · GLSL · NumPy DSP · FFmpeg", "name": "" }
+      ] }
+  ],
+
+  "reticle": [
+    { "t": 43.5,  "type": "acquire",   "zh": "目標鎖定", "en": "SUBJECT ACQUIRED", "label": "¹²C #0001" },
+    { "t": 62.8,  "type": "release" },
+    { "t": 80.0,  "type": "acquire",   "zh": "追蹤中",   "en": "TRACKING",          "label": "¹²C #0001" },
+    { "t": 121.6, "type": "release" },
+    { "t": 133.0, "type": "acquire",   "zh": "位置：最初的細胞", "en": "LOCATED · FIRST CELL", "label": "¹²C #0001" },
+    { "t": 151.8, "type": "release" },
+    { "t": 167.0, "type": "acquire",   "zh": "位置：一個孩子的手", "en": "LOCATED · A CHILD'S HAND", "label": "¹²C #0001" },
+    { "t": 176.8, "type": "release" },
+    { "t": 209.0, "type": "acquire",   "zh": "追蹤中",   "en": "TRACKING",          "label": "¹²C #0001" },
+    { "t": 228.0, "type": "lost",      "zh": "訊號遺失", "en": "SIGNAL LOST" },
+    { "t": 242.0, "type": "reacquire", "zh": "重新尋獲", "en": "SUBJECT REACQUIRED", "label": "¹²C #0001" },
+    { "t": 248.0, "type": "status",    "zh": "狀態：歸家", "en": "STATUS · HOME" },
+    { "t": 253.8, "type": "release" }
+  ],
+
+  "boot": {
+    "lines": [
+      { "t": 0.6, "text": "OBSERVATION LOG  ·  觀測日誌" },
+      { "t": 2.0, "text": "SUBJECT  ·  對象 ............ ¹²C  —  ONE CARBON ATOM  ·  一個碳原子" },
+      { "t": 3.6, "text": "TRACKING SPAN  ·  追蹤跨度 .... 19,900,000,000 YR" },
+      { "t": 5.2, "text": "SOURCE  ·  起點 ............. UNIVERSE AGE 4.2 × 10⁹ YR" },
+      { "t": 6.8, "text": "STATUS  ·  狀態 ............. INITIATING  ·  啟動中" }
+    ],
+    "glitchAt": 8.6,
+    "cutAt": 9.6
+  },
+
+  "audioCues": [
+    { "t": 0.0,   "cue": "sub rumble fades in from silence" },
+    { "t": 3.0,   "cue": "HUD boot: soft UI blips per typed line (3.6, 5.0, 6.6, 8.2, 9.8), data hum" },
+    { "t": 11.6,  "cue": "glitch burst (digital stutter)" },
+    { "t": 12.6,  "cue": "HARD CUT: deep boom hit, then reverb tail into silence" },
+    { "t": 13.4,  "cue": "presents card: single low piano note + airy shimmer" },
+    { "t": 17.0,  "cue": "ACT I: plasma roar fades in, low male choir drone in D, slow" },
+    { "t": 33.0,  "cue": "white flash transition: whoosh-in; fusion section: pulsing string ostinato starts (D minor, 8ths at 96 BPM)" },
+    { "t": 43.5,  "cue": "ATOM LEITMOTIF (celesta/bell: D6–A6–E7) + reticle lock click. The birth of the atom." },
+    { "t": 49.0,  "cue": "collapse section: ostinato intensifies, Shepard-tone riser builds from 53 to 61.5" },
+    { "t": 53.0,  "cue": "warning alarms (subtle, filtered) every 1s until 59" },
+    { "t": 59.0,  "cue": "implosion: reverse-cymbal suck + pitch-down groan" },
+    { "t": 61.5,  "cue": "TOTAL SILENCE (61.5–63.0). Only a faint high tinnitus sine." },
+    { "t": 63.0,  "cue": "SUPERNOVA: massive BRAAM (D1/D2 brass cluster) + cinematic impact + sub drop + debris crackle" },
+    { "t": 65.0,  "cue": "title: full orchestra chord D minor sustained, choir 'ah', huge reverb, decays by 75" },
+    { "t": 76.0,  "cue": "ACT II DRIFT: ethereal pads, granular shimmer, sparse reverb piano notes (main theme fragment)" },
+    { "t": 80.0,  "cue": "atom leitmotif soft (reticle reacquire)" },
+    { "t": 101.0, "cue": "SOL IGNITION: warm swell + soft impact, strings enter in major (F major color)" },
+    { "t": 110.0, "cue": "young earth: wide strings, low horns, gentle timpani roll; sunrise swell peaks at 117" },
+    { "t": 122.0, "cue": "ocean: water ambience, underwater muffled dip at 128 (low-pass sweep), bubbles" },
+    { "t": 133.0, "cue": "atom leitmotif + cell-division plinks" },
+    { "t": 138.0, "cue": "tree of life: building arpeggios (strings + pulse), timpani, accelerating to 152" },
+    { "t": 151.6, "cue": "cut to silence-ish; crickets, night wind" },
+    { "t": 152.0, "cue": "ACT III heart: solo piano MAIN THEME, intimate, D minor → F, night ambience (crickets, distant wind)" },
+    { "t": 167.0, "cue": "atom leitmotif very soft, integrated into piano (same notes)" },
+    { "t": 177.0, "cue": "lifetime: heartbeat begins (72 bpm) slowing to 40 by 186; strings swell under piano" },
+    { "t": 186.0, "cue": "heartbeat stops. Hold one bar of silence + single sustained high violin harmonic" },
+    { "t": 187.0, "cue": "dissolve: choir 'ooh' rises gently as particles lift to the stars" },
+    { "t": 191.0, "cue": "ACT IV: epic return of main theme, full orchestra + choir + taiko ostinato, D minor, building" },
+    { "t": 197.0, "cue": "deep fire roar / atmospheric stripping wind" },
+    { "t": 207.0, "cue": "white flash: impact; theme climax (biggest moment) on planetary nebula; then sustain" },
+    { "t": 222.0, "cue": "nursery: music thins to strings + choir pad; star ignitions = soft glassy pings" },
+    { "t": 228.0, "cue": "SIGNAL LOST: UI error tone, music drops to a single high sustained note, static hiss" },
+    { "t": 234.0, "cue": "new world: dawn. alien water lapping, gentle wind, high pad, waiting" },
+    { "t": 242.0, "cue": "REACQUIRE: atom leitmotif in full — resolves to D MAJOR. Strings bloom, choir. Emotional resolution." },
+    { "t": 248.0, "cue": "STATUS HOME: soft chime" },
+    { "t": 254.0, "cue": "final cards on black: solo piano, final phrase of main theme, D major" },
+    { "t": 262.0, "cue": "end title: last chord D major with long tail, low boom very soft" },
+    { "t": 269.0, "cue": "credits: ambient pad + leitmotif echo, fade to silence by 281" }
+  ]
+}
