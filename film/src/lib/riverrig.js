@@ -156,3 +156,45 @@ export function project(R, p, aspect = 1920 / 804) {
   return [960 + 960 * xr / (zf * tx), 402 - 402 * yu / (zf * ty), zf];
 }
 export const RIVER_S = RIVER.S;
+
+// ------------------------------------------------------------------------------------------ where the camera looks
+// focus s: the centre ray meets the water (y = 0.1); the nearest centreline point. Tabulated once.
+import { River } from './riverflow.js';
+let _rv = null;
+const RV = () => _rv || (_rv = new River());
+function centreS(R, sGuess) {
+  const B = basis(R);
+  let lam = B.f[1] < -1e-3 ? (0.1 - R.y) / B.f[1] : 30;
+  lam = clamp(lam, 0.5, 60);
+  const px = R.x + B.f[0] * lam, pz = R.z + B.f[2] * lam;
+  let best = 1e18, bs = sGuess;
+  for (let s = Math.max(-4, sGuess - 45); s <= Math.min(RIVER.S, sGuess + 45); s += 0.5) {
+    const f = RV().at(s), d = (f.x - px) ** 2 + (f.z - pz) ** 2;
+    if (d < best) { best = d; bs = s; }
+  }
+  for (let s = bs - 0.5; s <= bs + 0.5; s += 0.02) { const f = RV().at(s), d = (f.x - px) ** 2 + (f.z - pz) ** 2; if (d < best) { best = d; bs = s; } }
+  return { s: bs, d: lam };
+}
+const FT = { up: null, ret: null };
+function tab(mode, g0, g1, dg) {
+  const n = Math.round((g1 - g0) / dg) + 1, s = new Float64Array(n), d = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const G = g0 + i * dg, R = rig(mode, G, RV()); const c = centreS(R, R.sc); s[i] = c.s; d[i] = c.d; }
+  return { g0, dg, n, s, d };
+}
+function lookup(T, G) { const f = clamp((G - T.g0) / T.dg, 0, T.n - 1), i = Math.min(Math.floor(f), T.n - 2), k = f - i; return [T.s[i] + (T.s[i + 1] - T.s[i]) * k, T.d[i] + (T.d[i + 1] - T.d[i]) * k]; }
+export function focusS(G) { FT.up ||= tab('upstream', 44, 102, 0.05); return lookup(FT.up, G)[0]; }
+export function focusDist(G) { FT.up ||= tab('upstream', 44, 102, 0.05); return lookup(FT.up, G)[1]; }
+export function focusRet(G) { FT.ret ||= tab('return', 159, 173, 0.02); return lookup(FT.ret, G); }
+// when the camera's gaze passes river position s (inverse of focusS; extrapolated before 45 at the opening speed)
+export function viewTime(s) {
+  const s45 = focusS(45);
+  if (s >= s45) return 45 - (s - s45) / 0.76;
+  let lo = 45, hi = 93.5;
+  if (s <= focusS(hi)) return hi;
+  for (let it = 0; it < 40; it++) { const m = 0.5 * (lo + hi); if (focusS(m) > s) lo = m; else hi = m; }
+  return 0.5 * (lo + hi);
+}
+// era index (0 = 2026 ... 5 = 800 BCE, 6 = 1200 BCE) as a continuous value along s (boundaries ~2 units soft)
+let _B = null;
+export function eraBounds() { return _B || (_B = SYNC.slice(0, 6).map(focusS)); }
+export function eraAt(s, w = 2.2) { let e = 0; for (const b of eraBounds()) e += smoothstep(b + w, b - w, s); return e; }

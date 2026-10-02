@@ -29,7 +29,7 @@ import { PAL } from '../look/palette.js';
 import { TextField } from '../look/text.js';
 import { SegLines } from '../lib/seglines.js';
 import { crackGeometry } from '../lib/crack.js';
-import { clamp, lerp, smoothstep, easeInOutCubic, easeOutCubic, easeInCubic, easeInOutSine } from '../lib/ease.js';
+import { clamp, lerp, smoothstep, easeInOutCubic, easeOutCubic, easeInOutSine } from '../lib/ease.js';
 import { hash1 } from '../lib/random.js';
 import { TRIGRAM, TRIGRAM_NATURE, BIGRAM, MONOGRAM, HEX, line as yao, ringAngle, TAU } from '../lib/yijing.js';
 
@@ -203,12 +203,12 @@ export default class Lineage {
   buildMind() {
     // layers of cells behind the die plane (world units), with lit cells, numbers and links
     const layers = [];
-    for (let l = 1; l <= 9; l++) {
-      const z = -l * 3.2, cells = [];
+    for (let l = 1; l <= 16; l++) {
+      const z = -l * 3.0, cells = [];
       const pitch = 0.36, nx = 34, ny = 18;
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
         const h = hash1(l * 97.1 + i * 13.7 + j * 7.3);
-        if (h < 0.55) continue;
+        if (h < 0.72) continue;
         cells.push({ x: (i - (nx - 1) / 2) * pitch, y: (j - (ny - 1) / 2) * pitch, lit: h > 0.93 ? 1 : 0, h });
       }
       layers.push({ z, pitch, cells, nx, ny });
@@ -266,8 +266,8 @@ export default class Lineage {
     // Leibniz's addition examples (p. 86): 110+111=1101 (6+7=13), 101+1011=10000 (5+11=16), 1110+10001=11111 (14+17=31)
     this.addText = [];
     const AX = 1290, AY = 236, ex = [[['110', '111', '1101'], [6, 7, 13]], [['101', '1011', '10000'], [5, 11, 16]], [['1110', '10001', '11111'], [14, 17, 31]]];
-    this.addText.push(add({ text: "Pour l'Addition", font: { family: 'EBGaramond', weight: 400, style: 'italic' }, size: 15 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 58), 0], color: LINE, intensity: 0.85, show: hidden }));
-    this.addText.push(add({ text: 'par exemple.', font: { family: 'EBGaramond', weight: 400, style: 'italic' }, size: 15 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 38), 0], color: LINE, intensity: 0.85, show: hidden }));
+    this.addText.push(add({ text: "Pour l'Addition", font: { family: 'CormorantItalic', weight: 400, style: 'italic' }, size: 17 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 58), 0], color: LINE, intensity: 0.85, show: hidden }));
+    this.addText.push(add({ text: 'par exemple.', font: { family: 'CormorantItalic', weight: 400, style: 'italic' }, size: 17 * PX, anchor: [0, 0.5], pos: [wx(AX - 20), wy(AY - 38), 0], color: LINE, intensity: 0.85, show: hidden }));
     this.addRules = [];
     ex.forEach(([bins, decs], e) => {
       const x = AX + e * 118, rowsY = [AY, AY + 18, AY + 40];
@@ -295,9 +295,9 @@ export default class Lineage {
   // 2D segment in design px on the z = 0 plane, with the lower-third mask applied by screen position
   L(X1, Y1, X2, Y2, w, col, I, a = 1, cap = 0) {
     if (I <= 0 || a <= 0) return;
-    const ym = this.cam.cy + ((Y1 + Y2) / 2 - this.cam.cy) * this.cam.zoom + (402 - this.cam.cy) * 0;
+    if (!cap && Math.abs(X2 - X1) + Math.abs(Y2 - Y1) < 0.02) return;
     const ys = 402 + ((Y1 + Y2) / 2 - this.cam.cy) * this.cam.zoom;
-    const m = 1 - this.mask * smoothstep(560, 640, ys);
+    const m = 1 - this.mask * smoothstep(596, 650, ys);
     const k = I * m * this.gain;
     if (k <= 0.0005) return;
     this.sl.seg(wx(X1), wy(Y1), 0, wx(X2), wy(Y2), 0, w, col[0] * k, col[1] * k, col[2] * k, a, cap);
@@ -378,7 +378,7 @@ export default class Lineage {
     if (t >= RESHAPE && t < TAPE0 + 1.2) this.drawDiagram(t);
     if (t >= MOVE[0] - 0.1 && t < TAPE0 + 2.0) this.drawTable(t);
     if (t >= TAPE0 && t < PCB0 + 1.2) this.drawTape(t);
-    if (t >= CRT0 && t < DIE0 + 0.5) this.drawCRT(t);
+    if (t >= CRT0 && t < MIND0 + 1.0) this.drawCRT(t);
     if (t >= PCB0 && t < MIND0 + 1.0) this.drawChip(t);
     if (t >= MIND0 - 0.05) this.drawMind(t);
     this.sl.end();
@@ -403,7 +403,7 @@ export default class Lineage {
       cx = lerp(960, CRT.x, e); cy = lerp(402, CRT.y, e);
     }
     if (t > DIE0) {
-      const k = ramp(t, DIE0, MIND0 + 0.3);
+      const k = ramp(t, DIE0, MIND0);
       zoom *= Math.exp(Math.log(16) * easeInOutSine(k));
     }
     return { cx, cy, zoom };
@@ -416,7 +416,7 @@ export default class Lineage {
     const r = ease(t, 0.15, 0.8);            // twigs retract into their parents
     const crackCol = WARM, n1 = LV[1];
     const col = mixc(mixc(WARM, HOT, 0.25), YAO, s2);
-    const I = lerp(2.1, 1.25, s2);
+    const I = lerp(2.1, 1.2, s2);
     const cur = this._crackCur;
     this.crack.forEach((P, i) => {
       const pts = P.pts, n = pts.length, out = cur[i];
@@ -469,7 +469,7 @@ export default class Lineage {
       return;
     }
     // transition n → n+1
-    const [t0, D] = st, A = LV[n], B = LV[n + 1], N2 = 2 << (n - 1) << 1 >> 1;
+    const [t0, D] = st, A = LV[n], B = LV[n + 1];
     const e1 = easeInOutCubic(sat(prog / (0.62 * D)));
     const L = lerp(A.L, B.L, e1), g = lerp(A.g, B.g, e1), w = lerp(A.w, B.w, e1);
     const NC = 1 << (n + 1);
@@ -591,7 +591,6 @@ export default class Lineage {
   // ---------------------------------------------------------------------------------------------- 145 the table
   drawTable(t) {
     const out = 1 - ease(t, TAPE0, TAPE0 + 0.7);
-    const tape = ease(t, TAPE0, TAPE0 + 0.7);
     const I0 = 0.55;
     // rows that have arrived
     const arr = v => FLY0 + v * FLY_STEP + FLY_DUR;
@@ -628,10 +627,6 @@ export default class Lineage {
         this.L(R.x0, R.y, lerp(R.x0, R.x1, ak), R.y, 0.7, LINE, 0.45 * ak);
         this.L(R.xv, R.y0, R.xv, lerp(R.y0, R.y1, ak), 0.7, LINE, 0.4 * ak);
       }
-    }
-    // the numerals as holes once the table turns into tape
-    if (tape > 0 && t < TAPE0 + 2.0) {
-      // drawn by drawTape (positions shared)
     }
   }
 
@@ -681,7 +676,7 @@ export default class Lineage {
         if (!((code >> (4 - c)) & 1)) continue;
         const tx = X + CH_OFF[c] * P;
         const x = fromTable ? lerp(TB_COLX(c + 1), tx, k) : tx;
-        const r = lerp(fromTable ? 1.2 : 0, 4.4, k);
+        const r = 4.4 * k;
         this.dot(x, y, r, blur, col, (1.05 + 1.6 * read) * appear * fade);
       }
     }
@@ -707,7 +702,8 @@ export default class Lineage {
     const H = lerp(CRT.half, CHIP.half, toChip);
     const rad = lerp(34, 0, toChip);
     const col = mixc(mixc(LINE, AI, 0.45), AI, toChip);
-    const fadeOut = 1 - ease(t, DIE0 + 0.1, DIE0 + 0.5);
+    const fadeOut = 1 - ease(t, MIND0 + 0.2, MIND0 + 0.9);
+    const bitsOut = 1 - ease(t, PCB0 + 0.6, PCB0 + 1.2);
     // face outline (rounded square), drawn on
     const pts = roundedRect(CRT.x, CRT.y, H, rad, 12);
     const n = pts.length - 1, upto = n * k;
@@ -720,14 +716,14 @@ export default class Lineage {
     const pitch = lerp(CRT.pitch, (2 * CHIP.die) / 32, toChip);
     const tw0 = CRT0 + 0.35, tw1 = CRT0 + 1.55;
     const nb = Math.floor(1024 * ramp(t, tw0, tw1));
-    for (let b = 0; b < Math.min(nb + 1, 1024); b++) {
+    if (bitsOut > 0) for (let b = 0; b < Math.min(nb + 1, 1024); b++) {
       const r = b >> 5, c = b & 31;
       const x = CRT.x + (c - 15.5) * pitch, y = CRT.y + (r - 15.5) * pitch;
       const bit = this.store[b];
       const age = (t - lerp(tw0, tw1, b / 1024));
       if (age < 0) continue;
       const fl = 1 + 2.2 * Math.exp(-age / 0.06);
-      const I = (bit ? 1.25 : 0.55) * fl * fadeOut;
+      const I = (bit ? 1.25 : 0.55) * fl * bitsOut;
       if (bit) { const hl = lerp(2.6, 0.45 * pitch * 0.5, toChip); this.L(x - hl, y, x + hl, y, lerp(1.9, 1.2, toChip), col, I); }
       else this.L(x, y, x, y, lerp(2.4, 1.1, toChip), col, I, 1, 1);
     }
@@ -828,12 +824,12 @@ export default class Lineage {
   drawMind(t) {
     // dolly-zoom away from the die (the die stays framed, the layers behind open up), then fly forward
     const cam = this.camera;
-    const z0 = DIST / this.camera2D(MIND0).zoom;          // the die framing at the end of the push-in
+    const z0 = DIST / this.camera2D(t).zoom;             // the die framing at the end of the push-in
     const H0 = 2 * z0 * Math.tan(THREE.MathUtils.degToRad(FOV0 / 2));
     const dz = ease(t, MIND0, MIND0 + 1.1);
     const fov = lerp(FOV0, 62, dz);
     let camZ = H0 / (2 * Math.tan(THREE.MathUtils.degToRad(fov / 2)));
-    const fly = t > MIND0 + 0.9 ? Math.pow(t - (MIND0 + 0.9), 2.2) * 7.5 : 0;
+    const fly = t > MIND0 + 0.9 ? Math.pow(t - (MIND0 + 0.9), 2.0) * 6.0 : 0;
     camZ -= fly;
     const cx = wx(CRT.x), cy = wy(CRT.y);
     cam.fov = fov;
@@ -852,13 +848,15 @@ export default class Lineage {
       const z = Lr.z;
       if (z > camZ - 0.2) continue;
       const depth = camZ - z;
-      const I0 = k * (1 - smoothstep(14, 30, depth)) * smoothstep(0.2, 1.5, depth);
+      const I0 = k * (1 - smoothstep(11, 18, depth)) * smoothstep(0.2, 1.5, depth);
       if (I0 <= 0.01) continue;
       const hs = Lr.pitch * 0.36;
       for (const c of Lr.cells) {
         const X = cx + c.x, Y = cy + c.y;
-        const ys = projY(X, Y, z);
-        const m = 1 - this.mask * smoothstep(560, 640, ys);
+        pv.set(X, Y, z).project(cam);
+        if (pv.x < -1.1 || pv.x > 1.1 || pv.y < -1.15 || pv.y > 1.15) continue;
+        const ys = (1 - (pv.y * 0.5 + 0.5)) * 804;
+        const m = 1 - this.mask * smoothstep(596, 650, ys);
         const I = I0 * m * (c.lit ? 1.3 : 0.32);
         if (I <= 0.01) continue;
         const r = c.lit ? hs : hs * 0.8;
