@@ -569,7 +569,7 @@ def fire(dur, seed=0, crackle_pts=((0, 8),), roar_pts=None):
 # ============================================================================
 # THE CRACK 卜
 # ============================================================================
-def rod_hiss(dur=2.5, seed=0):
+def rod_hiss(dur=2.5, seed=0, cut=None):
     """The red-hot bronze rod meets the hollow: a tiny metal tick, then a sizzle that thickens, the shell
     creaking under the heat. Ends hard at dur (the crack takes over)."""
     r = R(seed)
@@ -597,6 +597,12 @@ def rod_hiss(dur=2.5, seed=0):
         pulses = (np.diff(np.floor(np.cumsum(f) / SR), prepend=0) > 0).astype(float)
         cr = bp(pulses * r.uniform(0.5, 1.0, m), 250, 1200) * np.sin(np.pi * tt / 0.22)
         y[i:i + m] += cr * 0.35 * (0.6 + 0.4 * tc / dur)
+    if cut is not None and 0 < cut < dur:   # the picture cuts to the front: the sizzle now heard through the shell
+        i = ns(cut)
+        m = n - i
+        tt = t[i:] - cut
+        y[i:] = lp(y[i:], 2600) * 1.25 + y[i:] * 0.25 * np.exp(-tt / 0.03)
+        y[i:i + ns(0.03)] += hp(r.standard_normal(ns(0.03)), 4000) * np.exp(-tvec(ns(0.03)) / 0.002) * 0.015
     # a breath held: the sizzle sinks in the last moment before the shell gives way
     hold = np.clip((dur - t) / 0.12, 0, 1)
     y *= 0.18 + 0.82 * hold ** 1.5
@@ -857,15 +863,33 @@ def _eras(S, A, T):
         f = fire(d, seed=97, crackle_pts=[(0, 1), (tb, 10), (d, 6)])
         f *= pts_env(f.shape[1], [(0, 0), (2.0, 0.25), (tb, 0.85), (tb + 2.0, 1.0), (T['lineage'] - tf0, 0.8),
                                   (d, 0.0)])[None]
+        br = T['bone_sync']['breath']
+        if br:
+            ta = tf0 + tvec(f.shape[1])
+            f *= (1 + sum(a_ * np.sin(TWO_PI * ta / p_ + ph) for a_, p_, ph in br))[None]
         A.add(tf0, f, -4.0, {'room': 0.15, 'hall': 0.15})
 
 
 def _bone(S, A, T):
     tr, tc = T['rod'], T['crack']
+    B = T['bone_sync']
     with S.layer('pre'):
-        S.add(tr, P(rod_hiss(tc - tr, seed=100), 0.05), 7.0, {'room': 0.2, 'hall': 0.1})
+        # the red-hot rod comes in from the lower right: a faint radiant shimmer, then the touch
+        d = tr - B['rod_in']
+        if d > 0.3:
+            r = R(99)
+            n = ns(d)
+            x = bp(colored_noise(n, r, -1.0), 1800, 7000) * (tvec(n) / d) ** 2.2
+            S.add(B['rod_in'], pan(x * 0.02, np.linspace(0.6, 0.15, n)) * 0.7071, -12.0, {'room': 0.2})
+        S.add(tr, P(rod_hiss(tc - tr, seed=100, cut=B['cut'] - tr), 0.05), 7.0, {'room': 0.2, 'hall': 0.1})
     # THE CRACK: dry, sharp, resonant; a little night air around it, then silence
     S.add(tc, P(crack(soft=False, seed=101, twigs=T['twigs']), 0.0), -12.0, {'room': 0.25, 'hall': 0.12})
+    # silence; the shell cools: a few tiny ticks as it contracts
+    for k, (dt, f) in enumerate([(0.85, 3900), (1.45, 5200), (2.3, 3300), (3.4, 4600)]):
+        n = ns(0.05)
+        tt = tvec(n)
+        x = np.sin(TWO_PI * f * tt) * np.exp(-tt / 0.006) + hp(R(130 + k).standard_normal(n), 3000) * np.exp(-tt / 0.0008) * 0.3
+        S.add(tc + dt, P(x * 0.03, 0.1 * (-1) ** k), -18.0 - 2 * k, {'room': 0.3})
 
 
 def _lineage(S, A, T):
@@ -875,26 +899,38 @@ def _lineage(S, A, T):
     for k, (dt, lv) in enumerate([(0.0, -23), (0.5, -28), (0.875, -31), (1.125, -34), (1.3125, -37)]):
         tt = t0 + dt * (g0 - t0) / 1.5
         S.add(tt, P(crack_echo(seed=110 + k, level=0.8), 0.3 * (-1) ** k), lv, {'hall': 0.2, 'space': 0.4})
-    # the hexagrams flip into 0 and 1
-    tfl = T['flip']
+    L = T['lin']
     r = R(111)
-    for k in range(64):
-        tt = tfl + 0.75 * (k / 63) ** 0.85
-        S.add(tt, P(laptop_key('bs', r.uniform(0.3, 0.55), seed=120 + k, hold=0.012), -0.7 + 1.4 * k / 63),
-              -16.0, {'hall': 0.15, 'space': 0.2})
-    # paper tape punch, accelerating
-    tp0, tp1 = T['tape'], T['circuits']
-    t = tp0
-    k = 0
+    # the sixty-four hexagrams flip into 0 and 1, one after another (each flip: a click, and a softer landing)
+    for k, tt in enumerate(L['flips']):
+        p = -0.7 + 1.4 * k / max(len(L['flips']) - 1, 1)
+        S.add(tt, P(laptop_key('bs', r.uniform(0.35, 0.55), seed=120 + k, hold=L['flip_dur']), p), -17.0,
+              {'hall': 0.15, 'space': 0.2})
+    # paper tape: it appears (a soft feed), then runs and accelerates: punches
+    n = ns(L['tape_run'] - L['tape'] + 0.3)
+    feed = bp(colored_noise(n, r, -1.5), 1500, 7000) * np.clip(tvec(n) / 0.6, 0, 1) * 0.01
+    S.add(L['tape'], P(feed, 0.25), -14.0, {'room': 0.2})
+    tp0, tp1 = L['tape_run'], L['chip']
+    t, k = tp0, 0
     while t < tp1:
         u = (t - tp0) / (tp1 - tp0)
-        rate = 8 * (1 + 2.0 * u ** 1.5)
+        rate = 8 * (1 + 2.5 * u ** 1.4)
         S.add(t, P(laptop_key('mech', 0.5 + 0.2 * (k % 2), seed=200 + k, hold=0.02), 0.25), -15.0 - 3 * u,
               {'room': 0.2})
         t += 1.0 / rate
         k += 1
-    # circuits: a faint electrical hum and sparse data chirps
-    d = T['mind_back'] - tp1 + 1.0
+    # the Williams tube writes its bits: tiny electrostatic dots and a faint whine
+    w0, w1 = L['crt']
+    n = ns(w1 - w0)
+    tw = tvec(n)
+    dots = np.sort(r.uniform(0, w1 - w0, int((w1 - w0) * 90)))
+    sp = spray(w1 - w0, dots, r.uniform(-0.2, 0.4, len(dots)), r, f_range=(6000, 11000), decay=(0.0008, 0.002),
+               amp=(0.3, 1.0))
+    whine = np.sin(TWO_PI * 7800 * tw) * np.sin(np.pi * tw / (w1 - w0)) * 0.004
+    S.add(w0, sp + P(whine, 0.1), -14.0, {'room': 0.2, 'hall': 0.1})
+    # the chip: a faint electrical hum and sparse data chirps
+    tp1 = L['chip']
+    d = L['lift'] - tp1 + 1.0
     n = ns(d)
     tt = tvec(n)
     hum = sum(a * np.sin(TWO_PI * 60 * h * tt) for h, a in [(1, 0.3), (2, 0.5), (3, 0.4), (5, 0.2), (7, 0.12)])

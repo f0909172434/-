@@ -302,8 +302,11 @@ def _bone(M, T):
     anc = {'hall': 0.35, 'space': 0.45}
     M.add(t1, P(stone_chime('A3', 0.6, seed=731), -0.1), -4.0, anc)
     d = cards[3] + 3.0 - t1
+    z0, z1 = T['bone_sync']['zoom']      # the push in to the crack swells; then all but the crack dims
+    dm1 = T['lineage'] + 0.2
     M.add(t1 + 0.4, solo_bowed_line([(0, d, 'A2', 0.5)], rel=2.0, att=3.5, nasal=0.35, vib_depth=3.0, seed=732,
-                                    dyn=[(0, 0.7), (d * 0.5, 1.0), (d, 0.6)]), -19.0, {'hall': 0.3, 'space': 0.3})
+                                    dyn=[(0, 0.7), (z0 - t1 - 0.4, 0.75), (z1 - t1 - 1.0, 1.15),
+                                         (dm1 - t1 - 0.4, 0.55), (d, 0.35)]), -19.0, {'hall': 0.3, 'space': 0.3})
     M.add(t1 + 1.0, strings_chord(['A1'], d - 0.6, 'cb', att=4.0, rel=2.0, seed=733, bright=0.1, vib_scale=0.3),
           -22.0, HALL)
     xa = t1 + 1.0
@@ -311,8 +314,9 @@ def _bone(M, T):
                          [1.0, 0.6, 1.4, 0.5, 1.1], 0.8), -8.0, anc, 740, pan_c=0.2)
     # 婦好: the human voice carries the question
     M.add(fu, P(stone_chime('D3', 0.45, seed=741), 0.1), -8.0, anc)
-    b = 0.75
-    hum = timed(Q, [fu + 0.2 + b * x for x in (0, 1, 3, 4, 5, 6.5, 7)], [b, 2 * b, b, b, 1.5 * b, 0.5 * b, 3.0],
+    r0, r1 = T['bone_sync']['read']      # the slow light reads the inscription; 她 ... ？ lands as it ends
+    b = (r1 - r0) / 7.0
+    hum = timed(Q, [r0 + b * x for x in (0, 1, 3, 4, 5, 6.5, 7)], [b, 2 * b, b, b, 1.5 * b, 0.5 * b, 2.8],
                 0.8, octv=-1)
     line(M, 'voice', hum, -8.0, {'hall': 0.35, 'space': 0.4}, 742, rel=1.6, glide=0.09, pan_c=-0.05)
     # he carved the question into the shell: the bow answers, the xun far above
@@ -326,49 +330,50 @@ def _bone(M, T):
 
 
 # ----------------------------------------------------------------------------
-TRIGRAMS = [7, 6, 5, 4, 3, 2, 1, 0]         # 乾 兌 離 震 巽 坎 艮 坤 (Fuxi order, yang = 1, bottom line first)
-
-
 def _lineage(M, T):
-    g0, g1 = T['yinyang']                   # 131.5, 137
-    tb = T['fuxi']                          # 140.0
-    s16 = 0.125
+    L = T['lin']                            # the lineage scene's own clock (lineage.js)
+    g0 = T['yinyang'][0]                    # 131.5: the two lines in place
+    tb = L['climax']                        # 140.0: the circle closes
     bell_send = {'hall': 0.3, 'space': 0.45}
     # under it all: a low A that grows toward the bloom
     d = tb - T['lineage'] + 0.3
     M.add(T['lineage'], strings_chord(['A1', 'A2'], d, 'cb', att=3.0, rel=0.4, seed=800,
                                       dyn=[(0, 0.4), (d * 0.6, 0.7), (d, 0.9)]), -13.0, HALL)
-    # yin and yang: two bronze voices (low A, high E), trigram by trigram
-    for k, v in enumerate(TRIGRAMS):
-        for j in range(3):
-            bit = (v >> (2 - j)) & 1
-            t = g0 + (k * 3 + j) * s16
-            M.add(t, P(bronze_bell('E5' if bit else 'A4', 0.75 if j == 0 else 0.55, seed=k * 3 + j, decay=0.7),
-                       0.25 if bit else -0.25), -8.0, bell_send)
-    # hexagrams: accelerating into a shimmering cloud
-    ta = g0 + 24 * s16
-    t, k = ta, 0
-    while t < tb - 0.05:
-        u = (t - ta) / (tb - ta)
-        h = 63 - (k // 6) % 64
-        j = k % 6
-        bit = (h >> (5 - j)) & 1
-        v = (0.45 + 0.35 * u) * (1.15 if j == 0 else 1.0)
-        M.add(t, P(bronze_bell('E5' if bit else 'A4', v, seed=40 + k % 23, decay=0.55),
-                   (0.3 if bit else -0.3) * (1 - 0.5 * u)), -9.0 + 2 * u, bell_send)
-        if j == 0 and u > 0.25:
-            M.add(t, P(bronze_bell('A5' if bit else 'A3', v * 0.7, seed=90 + k % 11, decay=0.5), 0.0), -14.0,
-                  bell_send)
-        t += s16 / (1 + 2.2 * u ** 1.3)
-        k += 1
+    # yin and yang: the two lines, then Shao Yong's doubling, level by level, left to right
+    # (even child = yin, low A; odd child = yang, high E); the finer levels climb into grains
+    M.add(g0, P(bronze_bell('A4', 0.7, seed=1, decay=0.9), -0.25), -8.0, bell_send)
+    M.add(g0 + 0.02, P(bronze_bell('E5', 0.7, seed=2, decay=0.9), 0.25), -8.0, bell_send)
+    regs = [('A4', 'E5', 0.64, 0.8, -5.0), ('A4', 'E5', 0.6, 0.7, -6.0), ('A5', 'E6', 0.52, 0.5, -8.0),
+            ('A5', 'E6', 0.45, 0.32, -10.0), ('A6', 'E7', 0.4, 0.22, -14.0)]
+    for n, times in enumerate(L['levels']):
+        lo, hi, v, dec, lv = regs[min(n, len(regs) - 1)]
+        N = len(times)
+        for c, t in enumerate(times):
+            yang = c % 2 == 1
+            M.add(t, P(bronze_bell(hi if yang else lo, v * (1.15 if c == 0 else 1.0), seed=(n * 64 + c) % 37,
+                                   decay=dec, bright=0.85), -0.6 + 1.2 * c / max(N - 1, 1)), lv, bell_send)
+    # 137.0: the sixty-four settle into the 8 x 8 square
+    tr = L['reshape']
+    M.add(tr, P(bronze_bell('A2', 0.6, seed=70, decay=1.6), 0.0), -9.0, HUGE)
+    for k in range(8):
+        M.add(tr + 0.07 * k, P(bronze_bell(['A5', 'E6'][k % 2], 0.3, seed=71 + k, decay=0.3), -0.5 + k / 7), -17.0,
+              bell_send)
+    # the ring: pair by pair (yin and yang alternating, around the circle), a crescendo that closes on 140.0
+    for v, t in enumerate(L['ring']):
+        u = v / max(len(L['ring']) - 1, 1)
+        p = 'A4' if v % 2 == 0 else 'E5'
+        M.add(t, P(bronze_bell(p, 0.35 + 0.5 * u, seed=80 + v % 9, decay=0.45), 0.7 * np.sin(np.pi * 2 * u)),
+              -11.0 + 4 * u, bell_send)
+        if v % 2 == 0 and u > 0.4:
+            M.add(t, P(bronze_bell('A3', 0.3 + 0.4 * u, seed=95 + v % 5, decay=0.5), 0.0), -16.0 + 4 * u, bell_send)
     # the approach (G sus) and the bloom: strings and choir, majestic, C major 6/9
-    tp = g1 + 0.5
+    tp = T['yinyang'][1] + 0.5
     dp = tb - tp
     up = [(0, 0.2), (dp, 1.0)]
     M.add(tp, strings_chord(['G2', 'D3'], dp, 'vc', att=dp * 0.8, rel=0.15, seed=810, dyn=up), -10.0, BIG)
     M.add(tp, strings_chord(['G3', 'A3', 'D4'], dp, 'vla', att=dp * 0.8, rel=0.15, seed=811, dyn=up), -12.0, BIG)
     M.add(tp + 0.5, choir(['G3', 'D4', 'A4'], dp - 0.5, 'u', att=dp * 0.7, rel=0.15, seed=812, dyn=up), -12.0, HUGE)
-    db_ = T['flip'] + 1.6 - tb
+    db_ = L['flips'][0] + 1.6 - tb
     dyn = [(0, 0.6), (0.7, 1.0), (2.2, 0.9), (db_, 0.55)]
     M.add(tb, strings_chord(['C1', 'C2'], db_, 'cb', att=0.35, rel=2.5, seed=820, dyn=dyn), -6.0, HUGE)
     M.add(tb, strings_chord(['C2', 'G2', 'C3'], db_, 'vc', att=0.35, rel=2.5, seed=821, dyn=dyn), -7.0, HUGE)
@@ -380,34 +385,40 @@ def _lineage(M, T):
         pno(M, tb + 0.012 * j, p, v, 4.0, db=6.0, send=HUGE, seed=60 + j)
     M.add(tb, P(bronze_bell('C4', 0.9, seed=830, decay=1.6), -0.1), -6.0, HUGE)
     M.add(tb, P(bronze_bell('C5', 0.7, seed=831, decay=1.4), 0.15), -10.0, HUGE)
-    # Leibniz: harpsichord clockwork, the head of Q (5-4-1-7) falling through the circle of fifths
-    tl = T['leibniz']
-    beat = 0.5
+    # Leibniz: harpsichord clockwork. One sixteenth per numeral landing in his table (0 .. 32), the head of Q
+    # (5-4-1-7) falling through the circle of fifths; the left hand ticks from the moment the diagram slides away
+    tab = L['table']
+    s16 = tab[1] - tab[0]
     scale = [57, 59, 60, 62, 64, 65, 67]          # A minor from A3; diatonic index i -> midi
     deg = lambda i: scale[i % 7] + 12 * (i // 7)
     roots = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6}
-    chords = ['A', 'D', 'G', 'C', 'F', 'B', 'E', 'A', 'D', 'E']
-    nb = int(round((T['tape'] - tl) / beat))
-    for b in range(nb):
-        c = chords[b % len(chords)]
-        r0 = roots[c]
-        ti = r0 + 4
-        while deg(ti) > 76:
-            ti -= 7
-        while deg(ti) < 65:
-            ti += 7
-        for i, dg in enumerate([ti, ti - 1, ti - 4, ti - 5]):
-            t = tl + b * beat + i * s16
-            M.add(t, P(harpsichord(deg(dg), 0.75 if i == 0 else 0.62, 0.11, seed=b * 4 + i, four=0.35), 0.2),
-                  1.0, ROOMY)
-        lo = deg(r0 - 7)
+    chords = ['A', 'D', 'G', 'C', 'F', 'B', 'E', 'A']
+    for k, t in enumerate(tab):
+        if k < 32:
+            c = chords[k // 4]
+            ti = roots[c] + 4
+            while deg(ti) > 76:
+                ti -= 7
+            while deg(ti) < 65:
+                ti += 7
+            mm = deg([ti, ti - 1, ti - 4, ti - 5][k % 4])
+        else:
+            mm = 69                                # 32 = 100000: home
+        M.add(t, P(harpsichord(mm, 0.78 if k % 4 == 0 else 0.62, 0.1, seed=k, four=0.35), 0.2), 1.0, ROOMY)
+    k0 = -int(np.floor((tab[0] - T['leibniz']) / s16 + 1e-6))
+    k0 -= k0 % 2
+    for k in range(k0, 33, 2):
+        c = 'A' if k < 0 else chords[min(k // 4, 7)]
+        lo = deg(roots[c] - 7)
         if lo > 50:
             lo -= 12
-        for i, mm in enumerate([lo, lo + 12]):
-            M.add(tl + b * beat + i * 2 * s16, P(harpsichord(mm, 0.6, 0.22, seed=300 + b * 2 + i), -0.25), 1.0,
-                  ROOMY)
+        mm = lo if (k // 2) % 2 == 0 else lo + 12
+        M.add(tab[0] + k * s16, P(harpsichord(mm, 0.6 if k >= 0 else 0.5, 0.2, seed=300 + k), -0.25), 1.0, ROOMY)
+    for j, mm in enumerate([45, 52, 57, 60, 64, 69]):  # '&c.': the table goes on; a final strummed A minor
+        M.add(L['etc'] + 0.016 * j, P(harpsichord(mm, 0.7, 0.9, seed=400 + j, four=0.3), -0.2 + 0.08 * j), 0.0,
+              ROOMY)
     # the binary goes to paper tape: two-tone pulses accelerate into electronic precision
-    tt0, tc = T['tape'], T['circuits']
+    tt0, tc = L['tape_run'], L['chip']
     bits = ''.join(f'{x:08b}' for x in '她會好起來嗎？'.encode('utf-8'))
     t, k = tt0, 0
     while t < tc - 0.01:
@@ -417,42 +428,43 @@ def _lineage(M, T):
                         seed=k), 0.35 if k % 2 else -0.35), 1.0, ROOMY)
         t += s16 / (1 + 3.0 * u)
         k += 1
-    for j in range(int(round((tc - tt0) / beat))):          # a soft pulse joins the tape
-        if j >= 2:
-            M.add(tt0 + j * beat, P(_soft_kick('A1', 0.35 + 0.08 * j), 0.0), -6.0, {'room': 0.1})
-    M.add(tt0, strings_chord(['A2', 'E3'], tc - tt0 + 0.3, 'vc', att=1.5, rel=0.4, seed=850,
-                             dyn=[(0, 0.5), (tc - tt0, 0.8)]), -15.0, BIG)
-    # circuits: a precise arpeggiator, a soft pulse below, strings holding the harmony
+    beat = 4 * s16
+    nbt = int((tc - tt0) / beat)
+    for j in range(1, nbt + 1):              # a soft pulse joins the tape
+        M.add(tt0 + j * beat, P(_soft_kick('A1', 0.4 + 0.1 * j), 0.0), -6.0, {'room': 0.1})
+    M.add(L['tape'], strings_chord(['A2', 'E3'], tc - L['tape'] + 0.3, 'vc', att=1.5, rel=0.4, seed=850,
+                                   dyn=[(0, 0.5), (tc - L['tape'], 0.8)]), -15.0, BIG)
+    # the chip: a precise arpeggiator (sixteenths, doubling at the acceleration), a soft pulse, strings below
     arps = {'A': ['A3', 'C4', 'E4', 'A4', 'C5', 'E5'], 'F': ['F3', 'A3', 'C4', 'E4', 'A4', 'C5'],
             'C': ['C4', 'E4', 'G4', 'C5', 'D5', 'E5'], 'G': ['G3', 'D4', 'G4', 'A4', 'D5', 'E5']}
     shape = [0, 1, 2, 3, 4, 5, 4, 3]
-    tmind = T['mind_back']
     trush = T['rush']
     seq = ['A', 'F', 'C', 'G']
+    bar = 4 * 0.5
     t, k = tc, 0
     while t < trush - 0.01:
-        bar = int((t - tc) / (4 * beat))
-        c = seq[bar % 4]
+        c = seq[int((t - tc) / bar) % 4]
         u = (t - tc) / (trush - tc)
-        M.add(t, P(blip(arps[c][shape[k % 8]], 0.6 + 0.25 * u, 0.07, 'saw', 1400 + 2600 * u, seed=500 + k),
-                   0.3 * np.sin(k * 0.7)), -8.0 + 2 * u, ROOMY)
-        if k % 4 == 0:
+        fast = t >= L['accel']
+        M.add(t, P(blip(arps[c][shape[k % 8]], 0.6 + 0.25 * u, 0.06 if fast else 0.07, 'saw', 1400 + 2600 * u,
+                        seed=500 + k), 0.3 * np.sin(k * 0.7)), -8.0 + 2 * u, ROOMY)
+        if (k % 4 == 0 and not fast) or (fast and k % 8 == 0):
             rt = {'A': 'A1', 'F': 'F1', 'C': 'C2', 'G': 'G1'}[c]
             M.add(t, P(_soft_kick(rt, 0.6 + 0.3 * u), 0.0), -4.0, {'room': 0.1})
-        t += s16
+        t += 0.0625 if fast else 0.125
         k += 1
-    pads = [(tc + 2 * beat * 4 * i, c) for i, c in enumerate(['A', 'F', 'C', 'G', 'A', 'F'])]
-    bars = [(t, 4 * beat) for t, _ in pads if t < trush]
+    pads = [(tc + bar * i, c) for i, c in enumerate(['A', 'F', 'C', 'G', 'A', 'F'])]
+    bars = [(t, bar) for t, _ in pads if t < trush]
     prog = [c for t, c in pads if t < trush]
     dyn = [(0, 0.4), (trush - tc, 1.0)]
     voices(M, tc, bars, [[RIVER_CH[c][1][0] for c in prog], [RIVER_CH[c][1][1] for c in prog]], 'vc', -12.0,
            BIG, 840, dyn=dyn)
     voices(M, tc, bars, [[VA_VOICES[c][j] for c in prog] for j in range(3)], 'vla', -15.0, BIG, 845, dyn=dyn)
-    # back into the mind: the seven glass tokens again, then the build
+    # the camera lifts back into the mind: the seven glass tokens again, then the build into the rush
     for i, p in enumerate(['E6', 'D6', 'A5', 'G5', 'C6', 'A5', 'D6']):
-        M.add(tmind + 0.25 * i, P(glass_ping(p, 0.8, seed=860 + i, t60=1.2, click=0.4), -0.45 + 0.15 * i), -5.0,
-              DATA)
-    tbd = T['build']
+        M.add(L['lift'] + 0.25 * i, P(glass_ping(p, 0.8, seed=860 + i, t60=1.2, click=0.4), -0.45 + 0.15 * i),
+              -5.0, DATA)
+    tbd = L['die']
     M.add(tbd, choir(['A3', 'E4', 'A4'], trush - tbd, 'u', att=trush - tbd - 0.5, rel=0.3, seed=870,
                      dyn=[(0, 0.3), (trush - tbd, 1.0)], morph=('a', [(0, 0), (trush - tbd, 0.8)])), -10.0, HUGE)
     M.add(tbd, strings_chord(['E5', 'A5'], trush - tbd, 'vln', att=trush - tbd - 0.5, rel=0.3, seed=871,

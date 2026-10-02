@@ -116,6 +116,68 @@ def mind_sync(t0):
     return S
 
 
+def _js_consts(path, names):
+    js = open(path, encoding='utf-8').read()
+    out = {}
+    for nm in names:
+        m = re.search(r'\b' + nm + r'\s*=\s*(-?' + NUM[1:-1] + r')', js)
+        if m:
+            out[nm] = float(m.group(1))
+    return js, out
+
+
+def lineage_sync(t0):
+    """Sync points of the finished lineage scene (film/src/scenes/lineage.js, local time + t0): Shao Yong's
+    doubling (level n: child c's new line at t0 + D (0.42 + 0.48 c / (2^(n+1) - 1)); even c = yin, odd = yang),
+    the 8 x 8 square, the ring (pair v lands at RING0 + RING_FLY + v RING_STEP), the climax, the binary flip, Leibniz's
+    table (numeral v lands at FLY0 + v FLY_STEP + FLY_DUR, '&c.' after 32), tape, Williams tube, chip, die, mind."""
+    L = dict(steps=[(131.62, 0.9), (132.55, 1.0), (134.5, 0.75), (135.3, 0.72), (136.08, 0.8)], reshape=137.0,
+             ring=[138.75 + 0.04 * v for v in range(32)], climax=140.0, flips=[143.5 + 0.021 * v for v in range(64)],
+             flip_dur=0.26, table=[146.13 + 0.112 * v for v in range(33)], etc=149.964, tape=150.0, tape_run=150.7,
+             crt=(151.65, 152.85), chip=153.0, die=155.0, lift=157.0, accel=158.0, src='reported')
+    try:
+        js, c = _js_consts(os.path.join(ROOT, 'film', 'src', 'scenes', 'lineage.js'),
+                           ['RESHAPE', 'RING0', 'RING_STEP', 'RING_FLY', 'CLIMAX', 'FLIP0', 'FLIP_STEP', 'FLIP_DUR',
+                            'FLY0', 'FLY_STEP', 'FLY_DUR', 'TAPE0', 'TAPE_RUN', 'CRT0', 'PCB0', 'DIE0', 'MIND0'])
+        st = re.search(r'const STEPS = \[(.*?)\];', js).group(1)
+        L['steps'] = [(t0 + float(a), float(b)) for a, b in re.findall(r'\[' + NUM + r',\s*' + NUM + r'\]', st)]
+        L['reshape'] = t0 + c['RESHAPE']
+        L['ring'] = [t0 + c['RING0'] + c['RING_FLY'] + c['RING_STEP'] * v for v in range(32)]
+        L['climax'] = t0 + c['CLIMAX']
+        L['flips'] = [t0 + c['FLIP0'] + c['FLIP_STEP'] * v for v in range(64)]
+        L['flip_dur'] = c['FLIP_DUR']
+        L['table'] = [t0 + c['FLY0'] + c['FLY_STEP'] * v + c['FLY_DUR'] for v in range(33)]
+        L['etc'] = t0 + c['FLY0'] + 32 * c['FLY_STEP'] + c['FLY_DUR'] + 0.25
+        L['tape'], L['tape_run'] = t0 + c['TAPE0'], t0 + c['TAPE_RUN']
+        L['crt'] = (t0 + c['CRT0'] + 0.35, t0 + c['CRT0'] + 1.55)
+        L['chip'], L['die'], L['lift'] = t0 + c['PCB0'], t0 + c['DIE0'], t0 + c['MIND0']
+        L['accel'] = t0 + c['MIND0'] + 1.0
+        L['src'] = 'lineage.js'
+    except Exception as e:  # pragma: no cover
+        L['src'] = f'reported ({e})'
+    L['levels'] = [[t + D * (0.42 + 0.48 * k / ((2 << n) - 1)) for k in range(2 << n)]
+                   for n, (t, D) in enumerate(L['steps'], start=1)]
+    return L
+
+
+def bone_sync():
+    """Sync points of the finished bone scene (film/src/scenes/bone.js, absolute times) and its fire flicker."""
+    B = dict(rod_in=101.3, touch=103.0, cut=104.604, snap=105.5, read=(113.5, 118.3), zoom=(125.4, 129.8),
+             dim=(128.4, 130.2), breath=[], src='reported')
+    try:
+        js, c = _js_consts(os.path.join(ROOT, 'film', 'src', 'scenes', 'bone.js'),
+                           ['T_ROD', 'T_TOUCH', 'T_CUT', 'T_SNAP', 'T_ZOOM0', 'T_ZOOM1'])
+        B.update(rod_in=c['T_ROD'], touch=c['T_TOUCH'], cut=c['T_CUT'], snap=c['T_SNAP'],
+                 zoom=(c['T_ZOOM0'], c['T_ZOOM1']))
+        m = re.search(r'const breath = T => 1 (.*?);', js)
+        B['breath'] = [(float(a), float(p), float(ph)) for a, p, ph in
+                       re.findall(r'([\d.]+) \* Math\.sin\(2 \* Math\.PI \* T / ([\d.]+) \+ ([\d.]+)\)', m.group(1))]
+        B['src'] = 'bone.js'
+    except Exception as e:  # pragma: no cover
+        B['src'] = f'reported ({e})'
+    return B
+
+
 def chat_events(tl):
     """Keystrokes exactly as overlay.js msgState() reveals the text: type (first char at t0, then the
     per-char delay: array entry i, or its last entry, or a constant), del (one backspace every dt), send."""
@@ -221,6 +283,10 @@ def load_times(path):
     T['crack'] = cue_num('BONE', r'CRACK at exactly ' + NUM, 105.5)
     T['bone_cards'] = [float(c['start']) for c in tl['cards'] if T['bone'] <= c['start'] < T['lineage']]
     T['fuhao'] = card('human', T['bone'], T['lineage'], 113.0)
+    T['bone_sync'] = bone_sync()
+    for k, k2 in (('rod', 'touch'), ('crack', 'snap')):
+        if abs(T[k] - T['bone_sync'][k2]) > 1e-6:
+            notes.append(f'bone.js {k2} = {T["bone_sync"][k2]} but the cue says {T[k]}; using the cue')
     # lineage
     T['yinyang'] = (cue_num('LINEAGE', r'hexagrams \(' + NUM + r'\s*[-–]\s*' + NUM + r'\)', 131.5),
                     cue_num('LINEAGE', r'hexagrams \(' + NUM + r'\s*[-–]\s*' + NUM + r'\)', 137.0, group=2))
@@ -231,6 +297,7 @@ def load_times(path):
     T['circuits'] = cue_num('LINEAGE', NUM + r' circuits', 153.0)
     T['mind_back'] = cue_num('LINEAGE', NUM + r' back into the mind', 157.0)
     T['build'] = cue_num('LINEAGE', NUM + r'\s*[-–]\s*' + NUM + r' builds', 155.0)
+    T['lin'] = lineage_sync(T['lineage'])
     # answer
     ai_ops = [(m['id'], o) for m in tl['chat']['messages'] if m['role'] == 'ai' and float(m['show'][0]) > T['answer']
               for o in m['ops']]
@@ -283,7 +350,11 @@ def qc_plan(T):
         checks.append((f'key {e["ch"]} ({e["msg"]})', e['t'], (1000, 8000), 'sfx', W))
     checks.append(('CRACK 卜', T['crack'], (1500, 12000), 'sfx', (-0.1, 0.1)))
     checks.append(('CRACK 卜 (master)', T['crack'], (1500, 12000), 'master', (-0.1, 0.1)))
-    checks.append(('Fuxi bloom', T['fuxi'], (150, 3000), 'music', (-0.15, 0.15)))
+    checks.append(('Fuxi bloom (circle closes)', T['fuxi'], (30, 90), 'music', (-0.05, 0.05)))
+    L = T['lin']
+    for v in (0, 16, 32):
+        checks.append((f'Leibniz numeral {v}', L['table'][v], (1500, 9000), 'music', (-0.04, 0.04)))
+    checks.append(('yin/yang level 1 c0', L['levels'][0][0], (300, 4000), 'music', (-0.05, 0.05)))
     for j, t in enumerate(T['lifts']):
         checks.append((f'lift chime {j + 1}', t, (1000, 6000), 'sfx', (-0.06, 0.06)))
     checks.append(('title crack', T['title_crack'], (1000, 8000), 'sfx', (-0.1, 0.1)))
