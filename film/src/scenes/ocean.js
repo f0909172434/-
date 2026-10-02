@@ -338,6 +338,7 @@ export default class Ocean {
         }`,
       });
       const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.renderOrder = 0;
+      this.oceanMesh = mesh;
       this.scene.add(mesh);
     }
 
@@ -489,6 +490,7 @@ export default class Ocean {
       m.uniforms.uResY = { value: ctx.height };
       this.bubbleMat = m;
       const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.renderOrder = 35;
+      this.bubbles = pts;
       this.scene.add(pts);
     }
 
@@ -754,6 +756,10 @@ export default class Ocean {
     U.uMedium.value = relH > 0.95 ? 1 : (relH < -1.4 ? -1 : 0);
     this.meniscus.visible = U.uMedium.value === 0;
     this.godrays.visible = U.uMedium.value < 0.5;
+    this.bubbles.visible = t > 6.0 && t < 9.6;
+    // the surface leaves the frame once the camera tilts down onto the cell
+    const topRay = cs.pitch + Math.atan(Math.tan(fov * Math.PI / 360) * 1.05);
+    this.oceanMesh.visible = !(t > 10 && topRay < -0.02);
 
     // cells
     const cl = this.cellState(t);

@@ -71,6 +71,7 @@ void main(){
 // ------------------------------------------------------------------ the planet + atmosphere + sun
 const PLANET_FRAG = /* glsl */`
 precision highp float;
+` + simplex3 + /* glsl */`
 uniform sampler2D tAlb, tCloud;
 uniform vec3 uCam, uSun, uMoon, uCamF, uCamR, uCamU;
 uniform vec2 uTan, uRes, uSunScr;
@@ -139,7 +140,10 @@ void main(){
     vec4 cl = texture2D(tCloud, uvOf(nc));
     vec3 nc2 = rotY(n, -uCloudSpin*1.35 + 0.4);
     float cir = texture2D(tCloud, uvOf(nc2)).g;
-    float cloud = clamp(cl.r + cir*0.35, 0.0, 1.0);
+    // high-frequency erosion: crisp, fractal cloud edges up close
+    float det = snoise(nc*70.0)*0.6 + snoise(nc*160.0)*0.3;
+    float cbase = cl.r + det*0.22*(1.0 - cl.r*0.6);
+    float cloud = clamp(smoothstep(0.12, 0.75, cbase) + cir*0.35*(0.8 + 0.4*det), 0.0, 1.0);
     // cloud shadow
     vec3 ns = rotY(normalize(n + uSun*0.012), -uCloudSpin);
     float csh = 1.0 - 0.6*texture2D(tCloud, uvOf(ns)).r;
