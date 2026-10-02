@@ -35,7 +35,8 @@
         "age": { "from": 4.2, "to": 4.2 },
         "scale": "10¹² m", "temp": "3,500 K",
         "location": { "zh": "紅超巨星", "en": "RED SUPERGIANT" },
-        "warn": { "start": 4.0, "zh": "核心坍縮", "en": "CORE COLLAPSE IMMINENT", "countdownTo": 10.0 } } },
+        "warn": { "start": 4.0, "zh": "核心坍縮", "en": "CORE COLLAPSE IMMINENT", "countdownTo": 10.0 },
+        "offAt": 12.4 } },
 
     { "id": "supernova",    "scene": "star",      "mode": "supernova","start": 63,  "end": 76,
       "hud": { "visible": 0.0 } },
@@ -170,7 +171,7 @@
 
   "reticle": [
     { "t": 43.5,  "type": "acquire",   "zh": "目標鎖定", "en": "SUBJECT ACQUIRED", "label": "¹²C #0001" },
-    { "t": 62.8,  "type": "release" },
+    { "t": 61.7,  "type": "release" },
     { "t": 80.0,  "type": "acquire",   "zh": "追蹤中",   "en": "TRACKING",          "label": "¹²C #0001" },
     { "t": 121.6, "type": "release" },
     { "t": 133.0, "type": "acquire",   "zh": "位置：最初的細胞", "en": "LOCATED · FIRST CELL", "label": "¹²C #0001" },

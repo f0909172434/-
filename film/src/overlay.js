@@ -72,7 +72,8 @@ export class Overlay {
     // power-on flicker at each shot start
     const on = smoothstep(0.05, 0.55, lt);
     const flick = lt < 0.5 ? (hash1(Math.floor(lt * 24) * 9.1 + shot.start) > 0.35 ? 1 : 0.25) : 1;
-    const a = h.visible * on * flick;
+    let a = h.visible * on * flick;
+    if (h.offAt != null && lt >= h.offAt) { const k = lt - h.offAt; a *= k < 0.25 ? (hash1(Math.floor(k * 24) * 3.7) > 0.5 ? 0.6 : 0.1) : 0; }
     if (a <= 0.001) return;
     const scr = clamp(1 - lt / 0.6); // value scramble on lock-in
     const seed = Math.floor(T * 24);
