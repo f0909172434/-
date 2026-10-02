@@ -87,10 +87,14 @@ export function rigUp(G, river) {
     const back = (50 / 338) * CRACK.L;                     // the final camera centre sits downstream of J
     const tx = J.x + s0.tx * back, tz = J.z + s0.tz * back;
     // position: approach along the stream, stay low until ~95, then rise over the source
-    const kp = easeInOutSine(smoothstep(91.8, 99.4, G)), kh = easeInOutCubic(smoothstep(94.6, 99.3, G));
+    // a slow drift from where the camera was at 91.8 replaces the stratum surge, so the source approaches gradually
+    const sB = scUp(91.8) - 0.45 * (G - 91.8), fB = river.at(sB), nB = fB.half * track(UP.a, 91.8) + track(UP.b, 91.8);
+    const kb = smoothstep(91.8, 92.5, G);
+    x = lerp(x, fB.x + fB.nx * nB, kb); z = lerp(z, fB.z + fB.nz * nB, kb);
+    const kp = easeInOutCubic(smoothstep(92.2, 99.4, G)), kh = easeInOutCubic(smoothstep(95.0, 99.3, G));
     x = lerp(x, tx, kp); z = lerp(z, tz, kp);
     nc = lerp(nc, 0, kp);
-    y = lerp(lerp(y, 1.45, smoothstep(92, 94.6, G)), H, kh);
+    y = lerp(lerp(y, 1.5, smoothstep(92, 95, G)), H, kh);
     // aim: the junction first, then the point under the final camera (so J ends 50 px above centre)
     const ka = smoothstep(96.6, 99.3, G);
     const ax = lerp(J.x, tx, ka), az = lerp(J.z, tz, ka);
