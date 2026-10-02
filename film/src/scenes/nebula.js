@@ -153,7 +153,7 @@ const SHEETS = [
   // big left wall, two-tone, folds running along the flight path
   { O: [-6.0, 0.5, -40], U: [0.25, 1, 0.05], V: [0.06, 0.0, -1], A: 13, B0: -48, B1: 100, amp: 2.0, lam: 7, curv: -0.015, ang: 0.08, colA: HA, colB: OIII, wA: 1.0, wB: 0.8, gain: 0.05, seed: 0.13, stretch: 6, diffuse: 0.03 },
   // right wall further away, mostly hydrogen
-  { O: [13.5, 1.5, -60], U: [-0.35, 1, 0.1], V: [-0.1, 0.02, -1], A: 15, B0: -45, B1: 95, amp: 2.6, lam: 9, curv: 0.01, ang: -0.15, colA: HA_DEEP, colB: OIII_B, wA: 0.9, wB: 0.45, gain: 0.038, patch: 0.3, seed: 0.51, stretch: 5, diffuse: 0.03 },
+  { O: [13.5, 1.5, -60], U: [-0.35, 1, 0.1], V: [-0.1, 0.02, -1], A: 15, B0: -45, B1: 95, amp: 2.6, lam: 9, curv: 0.01, ang: -0.15, colA: HA_DEEP, colB: HA, wA: 0.9, wB: 0.6, gain: 0.04, patch: 0.3, seed: 0.51, stretch: 5, diffuse: 0.03 },
   // ceiling, oxygen teal
   { O: [3, 7.0, -55], U: [1, 0.12, 0], V: [0.0, 0.03, -1], A: 18, B0: -40, B1: 95, amp: 2.2, lam: 8, curv: 0.008, ang: 0.25, colA: OIII, colB: OIII_B, wA: 1.0, wB: 0.5, gain: 0.045, seed: 0.77, stretch: 5, diffuse: 0.025 },
   // floor, faint deep red (keeps the subtitle zone calm)
@@ -603,7 +603,7 @@ export default class Nebula {
     });
     const detail = new THREE.Points(geo.detail, detailMat); detail.frustumCulled = false;
     const glowMat = pointsMaterial(GL_VERT, GL_FRAG, {
-      uFocal: { value: focal / div }, uWorld: { value: 0.5 }, uCap: { value: 70 * this.uScale + 10 }, uTime: uT, uFar: { value: 120 }, uGain: { value: 1 }, uTauGain: { value: 1 },
+      uFocal: { value: focal / div }, uWorld: { value: 0.5 }, uCap: { value: 70 * this.uScale + 10 }, uTime: uT, uFar: { value: 120 }, uGain: { value: 1 }, uTauGain: { value: 1.2 },
     }, true);
     const glow = new THREE.Points(geo.glow, glowMat); glow.frustumCulled = false;
 

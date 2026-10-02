@@ -104,35 +104,28 @@ vec3 rotA(vec3 v, vec3 k, float a){ float c=cos(a), s=sin(a); return v*c + cross
 
 const DOME_VERT = /* glsl */`varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
 const DOME_FRAG = hash + ROT_GLSL + /* glsl */`
-uniform sampler2D tMW; uniform mat3 uGal; uniform vec3 uPole;
-uniform float uAng, uLen, uBmax, uGain, uSmear, uSkyGain;
+uniform sampler2D tMW, tLow; uniform mat3 uGal; uniform vec3 uPole; uniform vec2 uRes;
+uniform float uAng, uLen, uBmax, uGain, uSkyGain, uMode, uLowMix;
 varying vec3 vPos;
-vec3 mw(vec3 d){
+vec2 galUV(vec3 d){
   vec3 g = uGal * d;
-  float l = atan(g.y, g.x); float b = asin(clamp(g.z, -1.0, 1.0));
-  vec2 uv = vec2(l/6.2831853 + 0.5, b/(2.0*uBmax) + 0.5);
-  float inb = 1.0 - smoothstep(0.94, 1.0, abs(uv.y-0.5)*2.0);
-  return texture2D(tMW, uv).rgb * inb;
+  return vec2(atan(g.y, g.x)/6.2831853 + 0.5, asin(clamp(g.z, -1.0, 1.0))/(2.0*uBmax) + 0.5);
 }
-vec3 mwLod(vec3 d, float lod){
-  vec3 g = uGal * d;
-  float l = atan(g.y, g.x); float b = asin(clamp(g.z, -1.0, 1.0));
-  vec2 uv = vec2(l/6.2831853 + 0.5, b/(2.0*uBmax) + 0.5);
-  float inb = 1.0 - smoothstep(0.94, 1.0, abs(uv.y-0.5)*2.0);
-  return textureLod(tMW, uv, lod).rgb * inb;
-}
+float inBand(vec2 uv){ return 1.0 - smoothstep(0.94, 1.0, abs(uv.y-0.5)*2.0); }
 void main(){
   vec3 d = normalize(vPos);
-  vec3 col;
-  if (abs(uLen) < 1e-4) col = mw(rotA(d, uPole, -uAng));
-  else {
-    col = vec3(0.0);
+  if (uMode > 0.5) {          // low-res pass: time-lapse smear of the Milky Way along the star trails
+    vec3 col = vec3(0.0);
     float j = hash12(gl_FragCoord.xy);
-    float sp = length(cross(uPole, d)) * abs(uLen) / 10.0 * ${(MW_W / (2 * Math.PI)).toFixed(2)};
-    float bias = clamp(log2(max(sp*10.0/14.0, 1e-3)) + 1.0, 0.0, 9.0);
-    for (int i = 0; i < 14; i++) { float s = (float(i) + j) / 14.0; col += mwLod(rotA(d, uPole, -(uAng - uLen*s)), bias); }
-    col /= 14.0;
+    float sp = length(cross(uPole, d)) * abs(uLen) / 14.0 * ${(MW_W / (2 * Math.PI)).toFixed(2)};
+    float lod = clamp(log2(max(sp, 1e-3)) + 1.0, 0.0, 9.0);
+    for (int i = 0; i < 14; i++) { float s = (float(i) + j) / 14.0; vec2 uv = galUV(rotA(d, uPole, -(uAng - uLen*s))); col += textureLod(tMW, uv, lod).rgb * inBand(uv); }
+    gl_FragColor = vec4(col / 14.0, 1.0);
+    return;
   }
+  vec3 col = vec3(0.0);
+  if (uLowMix < 0.999) { vec2 uv = galUV(rotA(d, uPole, -uAng)); col = texture2D(tMW, uv).rgb * inBand(uv); }
+  if (uLowMix > 0.001) col = mix(col, texture2D(tLow, gl_FragCoord.xy / uRes).rgb, uLowMix);
   float el = d.y;
   col *= uGain * (0.22 + 0.78*smoothstep(0.0, 0.42, el));
   vec3 sky = vec3(0.0035, 0.0062, 0.017) + vec3(0.010, 0.017, 0.036) * exp(-max(el, 0.0)*5.0);
@@ -187,16 +180,14 @@ varying vec3 vCol; varying float vSide;
 void main(){ float a = exp(-vSide*vSide*2.2); gl_FragColor = vec4(vCol*a, 1.0); }`;
 
 const HILL_VERT = /* glsl */`varying vec3 vW; varying vec3 vN; void main(){ vW = position; vN = normal; gl_Position = projectionMatrix*viewMatrix*vec4(position,1.0); }`;
-const HILL_FRAG = simplex3 + /* glsl */`
+const HILL_FRAG = /* glsl */`
 uniform float uRim;
 varying vec3 vW; varying vec3 vN;
 void main(){
   vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vW);
   float ndv = abs(dot(n, v));
   float rim = pow(1.0 - ndv, 12.0);
-  float g = snoise(vW*vec3(5.0, 9.0, 5.0))*0.5 + 0.5;
-  float g2 = snoise(vW*vec3(23.0, 40.0, 23.0))*0.5 + 0.5;
-  vec3 col = vec3(0.0026, 0.0036, 0.0072) * (0.65 + 0.5*g*g2) * (0.55 + 0.45*clamp(n.y, 0.0, 1.0));
+  vec3 col = vec3(0.0026, 0.0036, 0.0072) * (0.55 + 0.45*clamp(n.y, 0.0, 1.0));
   col += vec3(0.035, 0.055, 0.110) * rim * uRim;
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -244,7 +235,8 @@ vec3 dissolve(vec3 p, float age, out float alpha, out float starK){
     float ang = age*(0.8 + aRnd.w*1.1);
     float c = cos(ang), s = sin(ang);
     rel.xz = vec2(c*rel.x - s*rel.z, s*rel.x + c*rel.z);
-    rel.xz *= 1.0 + e*e*(2.0 + 16.0*aRnd.y);
+    rel.x *= 1.0 + e*e*(2.0 + 14.0*aRnd.y);
+    rel.z = rel.z*(1.0 + e*e*(1.0 + 4.0*aRnd.y)) - e*e*(0.5 + 3.0*aRnd.x);
     rel.y += e*e*(2.0 + 12.0*aRnd.z) + 0.30*age;
     vec3 q = p*1.3 + vec3(0.0, -age*0.3, aRnd.x*9.0);
     p = uCenter + rel + curl3(q)*0.10*age;
@@ -280,7 +272,7 @@ void main(){
   mv.z += uBias;
   gl_Position = projectionMatrix * mv;
   float sz = mix(uSize, 0.6*uSize, starK) * uPx / max(-mv.z, 0.1);
-  float s = max(sz, 1.0);
+  float s = clamp(sz, 1.0, 3.0*uPx/756.0);
   vCol = col * (sz*sz)/(s*s);
   gl_PointSize = s;
   if (alpha < 0.003) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; }
@@ -906,15 +898,24 @@ export default class Humans {
   }
 
   _buildDome() {
+    const W = this.ctx.width, H = this.ctx.height;
+    this.lowRT = new THREE.WebGLRenderTarget(Math.ceil(W / 4), Math.ceil(H / 4), { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
     this.domeU = {
-      tMW: { value: this.mwRT.texture }, uGal: { value: this.gal }, uPole: { value: this.pole },
-      uAng: { value: 0 }, uLen: { value: 0 }, uBmax: { value: BMAX }, uGain: { value: 0.30 }, uSmear: { value: 0 }, uSkyGain: { value: 1 },
+      tMW: { value: this.mwRT.texture }, tLow: { value: this.lowRT.texture }, uGal: { value: this.gal }, uPole: { value: this.pole }, uRes: { value: new THREE.Vector2(W, H) },
+      uAng: { value: 0 }, uLen: { value: 0 }, uBmax: { value: BMAX }, uGain: { value: 0.30 }, uSkyGain: { value: 1 }, uMode: { value: 0 }, uLowMix: { value: 0 },
     };
-    const m = new THREE.Mesh(new THREE.SphereGeometry(900, 96, 48), new THREE.ShaderMaterial({
+    const geo = new THREE.SphereGeometry(900, 96, 48);
+    const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
       vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: this.domeU, side: THREE.BackSide, depthWrite: false, depthTest: false,
     }));
     m.renderOrder = -10; m.frustumCulled = false;
     m.name = 'dome'; this.sceneWide.add(m);
+    this.smearScene = new THREE.Scene();
+    const sm = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: { ...this.domeU, uMode: { value: 1 } }, side: THREE.BackSide, depthWrite: false, depthTest: false,
+    }));
+    sm.frustumCulled = false;
+    this.smearScene.add(sm);
   }
 
   _buildStars() {
@@ -1058,7 +1059,7 @@ export default class Humans {
     this.xf = this.gx + 0.4;
     this.yc = 0; this.yc = this.gy - this.hillShape(this.gx, ZC);
 
-    const NX = 900, NZ = 220;
+    const NX = 700, NZ = 170;
     const xs = [], zs = [];
     for (let i = 0; i <= NX; i++) xs.push(-32 + 74 * i / NX);
     for (let j = 0; j <= NZ; j++) { const q = j / NZ * 2 - 1; zs.push(ZC + Math.sign(q) * Math.pow(Math.abs(q), 2.2) * (q < 0 ? 34 : 9.8)); }
@@ -1335,7 +1336,7 @@ export default class Humans {
     this.domeU.uAng.value = ang; this.domeU.uLen.value = -sgnLen;
     this.domeU.uGain.value = 0.30 * (1 - 0.35 * smoothstep(0, 2.5, len));
     this.trailU.uGain.value = 0.85;
-    this.domeU.uSmear.value = len > 0 ? Math.max(0, Math.log2(len * (MW_W / (Math.PI * 2)) / 10) - 1.0) : 0;
+    this.domeU.uLowMix.value = smoothstep(0.0, 0.12, len);
     this.starU.uRot.value.setFromMatrix4(new THREE.Matrix4().makeRotationAxis(this.pole, ang));
     this.starU.uTime.value = T;
     this.starU.uTwinkle.value = life ? 0.05 : 0.12;
@@ -1379,8 +1380,13 @@ export default class Humans {
       }
     }
     const exposure = life ? lerp(1.0, 0.8, smoothstep(10, 14, tc)) : 1.0;
+    const lowMix = this.domeU.uLowMix.value;
     return {
       scene: this.sceneWide, camera: this.camWide, target: null,
+      render: (r, target) => {
+        if (lowMix > 0.001) { r.setRenderTarget(this.lowRT); r.render(this.smearScene, this.camWide); }
+        r.setRenderTarget(target); r.render(this.sceneWide, this.camWide);
+      },
       post: {
         exposure, bloomStrength: 0.62, bloomThreshold: 0.7, bloomKnee: 0.5, bloomRadius: 0.82,
         streak: 0.06, streakTint: [0.6, 0.75, 1.0], ca: life ? 0.0009 : 0.0014, vignette: 0.42, grain: 0.05,
@@ -1417,7 +1423,7 @@ export default class Humans {
   }
 
   dispose() {
-    this.mwRT?.dispose();
+    this.mwRT?.dispose(); this.lowRT?.dispose();
     for (const s of [this.sceneWide, this.sceneHand]) s?.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
   }
 }

@@ -140,10 +140,11 @@ void main(){
     vec4 cl = texture2D(tCloud, uvOf(nc));
     vec3 nc2 = rotY(n, -uCloudSpin*1.35 + 0.4);
     float cir = texture2D(tCloud, uvOf(nc2)).g;
-    // high-frequency erosion: crisp, fractal cloud edges up close
-    float det = snoise(nc*70.0)*0.6 + snoise(nc*160.0)*0.3;
-    float cbase = cl.r + det*0.22*(1.0 - cl.r*0.6);
-    float cloud = clamp(smoothstep(0.12, 0.75, cbase) + cir*0.35*(0.8 + 0.4*det), 0.0, 1.0);
+    // fractal detail: wispy edges + internal billows up close
+    float det = snoise(nc*45.0)*0.5 + snoise(nc*110.0)*0.3 + snoise(nc*260.0)*0.2;
+    float cbase = cl.r + det*0.2*(1.0 - cl.r*0.5);
+    float cloud = clamp(smoothstep(0.04, 0.85, cbase) + cir*0.3*(0.8 + 0.4*det), 0.0, 1.0);
+    float cbright = 0.72 + 0.28*clamp(cl.r*1.2 + det*0.35, 0.0, 1.0);
     // cloud shadow
     vec3 ns = rotY(normalize(n + uSun*0.012), -uCloudSpin);
     float csh = 1.0 - 0.6*texture2D(tCloud, uvOf(ns)).r;
@@ -175,7 +176,7 @@ void main(){
     ground += (1.0 - land)*Dm*0.05*NdM*moonE*(1.0 - cloud);
     // clouds: bright, slightly wrapped lighting; thicker clouds self-shadow
     float wrap = clamp((NdL + 0.08)/1.08, 0.0, 1.0);
-    vec3 cc = vec3(0.92, 0.94, 0.97)*(wrap*E*(0.75 + 0.25*cl.r) + NdM*moonE*1.6);
+    vec3 cc = vec3(0.92, 0.94, 0.97)*(wrap*E*(0.75 + 0.25*cl.r) + NdM*moonE*1.6)*cbright;
     vec3 surf = mix(ground, cc, cloud);
     // volcanic glow on the night side
     surf += vec3(1.0, 0.28, 0.05)*hot*hot*(1.0 - day)*(1.0 - cloud*0.8)*0.6;
@@ -200,8 +201,8 @@ void main(){
   float dd = length(dp);
   float ang = atan(dp.y, dp.x);
   float rays = 0.0;
-  rays += pow(abs(cos(ang*3.0 + 0.3)), 900.0)*exp(-dd/150.0);
-  rays += 0.5*pow(abs(cos(ang*5.0 + 1.1)), 1400.0)*exp(-dd/90.0);
+  rays += pow(abs(cos(ang*3.0 + 0.3)), 900.0)*exp(-dd/95.0);
+  rays += 0.5*pow(abs(cos(ang*5.0 + 1.1)), 1400.0)*exp(-dd/60.0);
   rays *= smoothstep(4.0, 20.0, dd);
   float glow = exp(-dd/10.0)*1.0 + exp(-dd/40.0)*0.06 + exp(-dd/260.0)*0.025;
   vec3 gcol = mix(vec3(1.0, 0.92, 0.82), vec3(1.0, 0.6, 0.3), uSunRed);
@@ -515,7 +516,7 @@ export default class Earth {
     return {
       scene: B.sceneBG, camera: cam, render, target: tw,
       post: {
-        exposure: 1.0, bloomStrength: 0.6 + 0.35 * burst, bloomThreshold: 1.1, bloomKnee: 0.6, bloomRadius: 0.8,
+        exposure: 1.0, bloomStrength: 0.55 + 0.3 * burst, bloomThreshold: 1.2, bloomKnee: 0.6, bloomRadius: 0.72,
         streak: 0.08 + 0.3 * burst, streakTint: [1.0, 0.72, 0.45], ca: 0.0018, vignette: 0.42, grain: 0.04,
         saturation: 1.12, contrast: 1.06, tint: [1.0, 1.0, 1.0], lift: [0.0, 0.002, 0.005],
       },

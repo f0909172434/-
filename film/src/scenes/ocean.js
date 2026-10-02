@@ -541,9 +541,14 @@ export default class Ocean {
           vec3 ro = uCamPos; vec3 rd = normalize(vW - uCamPos);
           vec3 oc = ro - uCtr; float b = dot(oc, rd); float c = dot(oc, oc) - uBR * uBR;
           float h = b * b - c; if (h < 0.0) discard;
-          float ct = dot(oc, oc) - uBR2 * uBR2; float h2 = b * b - ct;
-          float t0 = 0.0, t1 = -1.0;
-          if (h2 > 0.0) { h2 = sqrt(h2); t0 = max(-b - h2, 0.0); t1 = -b + h2; }
+          // march only where the ray passes through one of the (padded) cell spheres
+          float t0 = 1e9, t1 = -1.0;
+          for (int i = 0; i < 4; i++) {
+            vec3 o2 = ro - uC[i].xyz; float b2 = dot(o2, rd); float rr = uC[i].w + 0.16;
+            float h2 = b2 * b2 - (dot(o2, o2) - rr * rr);
+            if (h2 > 0.0) { h2 = sqrt(h2); t0 = min(t0, max(-b2 - h2, 0.0)); t1 = max(t1, -b2 + h2); }
+          }
+          if (t1 < 0.0) t0 = 0.0;
           float t = t0; bool hit = false; float dmin = 1e9;
           for (int i = 0; i < 30; i++) {
             if (t1 < 0.0) break;
