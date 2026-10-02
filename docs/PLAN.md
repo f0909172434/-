@@ -77,6 +77,8 @@
 - `python3 audio/build.py` → `node tools/assemble.mjs` → 壓三個版本：GitHub 版 (<100 MB，放 `release/oracle_1080p.mp4`)、預覽版 (約 20 MB，用 SendUserFile 傳給使用者)、高畫質版 (本機)。
 
 ### 步驟 4：README (中英雙語) + 劇照 + Afterword 重寫，推送。
+- **授權標示 (必須)**：甲骨文字形折線改編自 Qing-sheng Li & Yu-lin Bian, *An Interpretable Parametric Representation and Open Dataset for Oracle Bone Script* (npj Heritage Science, 2026), github.com/aylqs2025/oracle-bone-jgw-1203，資料採 CC BY 4.0 (已查證)；改動見 `film/src/lib/oracle_glyphs.js` 檔頭。
+- 卜辭：主辭依《合集》795正、709正重建 (「肩凡有疾」讀法依蔡哲茂〈殷卜辭「肩凡有疾」解〉)，對貞出自《合集》709正。
 倉庫目前沒有 base branch 可以開 PR (遠端只有這一個分支)。
 
 ## 4. 子代理簡報範本 (貼上時補上各自的鏡頭說明)
