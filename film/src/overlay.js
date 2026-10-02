@@ -201,7 +201,8 @@ export class Overlay {
       const txt = st.text;
       const tw = this.width(txt, font, 4);
       const x0 = BW / 2 - tw / 2;
-      if (txt && alpha > 0.002) this.text(txt, BW / 2, y, font, rgba(col, alpha), { align: 'center', ls: 4 });
+      const shownTxt = pr != null ? [...txt].slice(0, -1).join('') : txt;
+      if (shownTxt && alpha > 0.002) this.text(shownTxt, x0, y, font, rgba(col, alpha), { ls: 4 });
       // caret
       if (st.caret != null && st.sentAt == null && !later && !pr) {
         const typing = T - st.lastKey < 0.45;
@@ -213,22 +214,40 @@ export class Overlay {
         let cur = null, prev = null;
         for (const e of m.en) if (T >= e[0]) { prev = cur; cur = e; }
         if (cur) {
-          const k = clamp((T - cur[0]) / 0.3);
+          const reveal = cur[2] != null;                       // typed along with the Chinese
+          const k = reveal ? 1 : clamp((T - cur[0]) / 0.3);
           const enY = y + 40;
-          if (prev && prev[1] && k < 1) this.text(prev[1], BW / 2, enY, CORMI(400, 23), rgba(col, 0.62 * alpha * (1 - k)), { align: 'center', ls: 1 });
-          if (cur[1]) this.text(cur[1], BW / 2, enY, CORMI(400, 23), rgba(col, 0.62 * alpha * k), { align: 'center', ls: 1 });
+          if (prev && prev[1] && k < 1) this.enLine(prev[1], enY, rgba(col, 0.62 * alpha * (1 - k)), 1);
+          if (cur[1]) this.enLine(cur[1], enY, rgba(col, 0.62 * alpha * k), reveal ? clamp((T - cur[0]) / Math.max(cur[2] - cur[0], 1e-3)) : 1);
         }
       }
       if (pr != null && pr < 1) {
         const last = [...txt].slice(-1)[0];
         const wb = this.width([...txt].slice(0, -1).join(''), font, 4);
-        const gx = x0 + wb + 16, gy = y - 7;
+        const gx = x0 + wb + 32 * 0.27, gy = y - 32 * 0.13;
         const k = easeInOutCubic(pr);
-        const cx = lerp(gx, BW / 2, k), cy = lerp(gy, BH / 2, k), r = lerp(5, 36, k);
+        const cx = lerp(gx, BW / 2, k), cy = lerp(gy, BH / 2, k), r = lerp(4.6, 36, k);
         this.g.strokeStyle = rgba(CSS.si, 0.95 * vis); this.g.lineWidth = lerp(2.2, 1.4, k);
         this.g.beginPath(); this.g.arc(cx, cy, r, 0, Math.PI * 2); this.g.stroke();
         if (last !== '。') { /* nothing */ }
       }
+    }
+  }
+
+  enLine(str, y, color, reveal = 1) {
+    const font = CORMI(400, 23);
+    const parts = []; const re = /~~(.+?)~~/g; let last = 0, mm;
+    while ((mm = re.exec(str))) { if (mm.index > last) parts.push([str.slice(last, mm.index), false]); parts.push([mm[1], true]); last = re.lastIndex; }
+    if (last < str.length) parts.push([str.slice(last), false]);
+    const plain = parts.map(p => p[0]).join('');
+    const total = this.width(plain, font, 1);
+    let x = BW / 2 - total / 2, shown = Math.round(plain.length * reveal), used = 0;
+    for (const [txt, strike] of parts) {
+      const vis = txt.slice(0, Math.max(0, shown - used)); used += txt.length;
+      const w = this.width(txt, font, 1);
+      if (vis) this.text(vis, x, y, font, color, { ls: 1 });
+      if (strike && vis.length === txt.length) { this.line(x - 2, y - 7, x + w - 1, y - 7, color, 1.2); }
+      x += w;
     }
   }
 
@@ -392,7 +411,7 @@ export class Overlay {
       this.text(zh, x + sz - 14, y + 26, SANS(300, 18), rgba(color, 0.85 * ta), { align: 'right' });
       this.text(mass, x + sz / 2, y + sz - 12, MONO(300, 11), rgba(color, 0.6 * ta), { align: 'center', ls: 1 });
     };
-    const tx = 720, ty = 214;
+    const tx = 720, ty = 252;
     tile(tx, ty, 6, 'C', '碳', '12.011', CSS.c, 0.2);
     tile(tx, ty + 150, 14, 'Si', '矽', '28.085', CSS.si, 0.7);
     const ga = smoothstep(1.4, 2.2, lt) * out;
@@ -402,7 +421,7 @@ export class Overlay {
     this.text('第十四族 · GROUP 14', tx + 66, ty + 318, MONO(300, 11), WHITE(0.6 * ga), { align: 'center', ls: 3 });
     const ka = smoothstep(2.5, 4.0, lt) * out;
     const kr = (1 - easeOutCubic(clamp((lt - 2.5) / 2.5))) * 10;
-    this.text('同族', 930 + kr, 392, SERIF(300, 120), WHITE(0.97 * ka), { ls: 30 });
-    this.text('KIN', 936 + kr, 452, CINZEL(400, 30), WHITE(0.85 * ka), { ls: 26 });
+    this.text('同族', 930 + kr, 430, SERIF(300, 120), WHITE(0.97 * ka), { ls: 30 });
+    this.text('KIN', 936 + kr, 490, CINZEL(400, 30), WHITE(0.85 * ka), { ls: 26 });
   }
 }
