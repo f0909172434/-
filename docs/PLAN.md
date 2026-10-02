@@ -4,7 +4,9 @@
 
 ## 0. 一句話現況
 
-《卜 ORACLE》的劇本、視覺規範、時間線 (EDL) 和引擎都已就緒。**步驟 1 已完成**：GPU 文字場 `look/text.js`、overlay 的 toData / lift / 片名裂紋、多語言字體。四個場景目前仍是佔位 stub，整條時間線可以從頭跑到尾 (`node tools/render.mjs stills ...`)。**下一步是做出 4 個場景與配樂 (步驟 2)，然後渲染。**
+**《卜 ORACLE》v3 已完成 (2026-10-02)**：四個場景 (mind / river / bone / lineage)、合成配樂與音效、全片 1080p 渲染 (27 段，約 1.5 小時)、成片 `release/oracle_1080p.mp4` (94.6 MB，H.264 2.6 Mbps + AAC 192k)、中英雙語 README 與劇照。預覽版 (960×540，19.3 MB) 與高畫質版 (CRF 16，約 800 MB) 只在本機 `out/`。
+
+重做任何一段：改場景 → 刪掉 `out/segments/seg_<frame>.mkv.done` (每段 240 幀 = 10 秒) → `node tools/render.mjs video --workers 3` → `python3 audio/build.py` (同步點從場景程式讀取) → `node tools/assemble.mjs` → `node tools/encode.mjs github|preview|hq`。
 
 ## 1. 決策紀錄 (為什麼是現在這個版本)
 
