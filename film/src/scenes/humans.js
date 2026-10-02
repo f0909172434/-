@@ -302,15 +302,12 @@ void main(){
   gl_Position = projectionMatrix * mv;
   gl_PointSize = max(uOcc * uPx / max(-mv.z, 0.1), 1.0);
 }`;
-const OCC_FRAG = /* glsl */`
-uniform vec3 uColor;
-void main(){ if (length(gl_PointCoord - 0.5) > 0.5) discard; gl_FragColor = vec4(uColor, 1.0); }`;
 const HOCC_FRAG = /* glsl */`
 uniform vec3 uColor; varying float vK;
 void main(){ if (length(gl_PointCoord - 0.5) > 0.5) discard; gl_FragColor = vec4(uColor * vK, 1.0); }`;
 const FOCC_FRAG = /* glsl */`
 uniform vec3 uColor; uniform float uBright, uPulse;
-void main(){ if (length(gl_PointCoord - 0.5) > 0.5) discard; gl_FragColor = vec4(uColor * uBright/0.3 * (1.0 + uPulse), 1.0); }`;
+void main(){ if (length(gl_PointCoord - 0.5) > 0.5) discard; gl_FragColor = vec4(uColor * uBright/0.22 * (1.0 + uPulse), 1.0); }`;
 
 // Hand: static particles in hand space (SDF surface samples), lit + depth of field.
 const HAND_VERT = /* glsl */`
@@ -332,7 +329,7 @@ void main(){
   float fres = pow(1.0 - ndv, 3.5);
   float lam = clamp(dot(n, uL)*0.6 + 0.4, 0.0, 1.0);
   float ao = aAO;
-  vec3 col = mix(uWarm2, uWarm, lam) * (0.10 + 1.25*lam*lam) * ao;
+  vec3 col = mix(uWarm2, uWarm, lam) * (0.08 + 1.55*lam*lam*lam) * ao;
   col = mix(col, col*1.1 + vec3(0.05, 0.045, 0.05)*ao, aNail);
   col += uRim * fres * 0.9 * (0.5 + 0.5*clamp(n.y*0.5 + 0.5, 0.0, 1.0)) * ao;
   col *= 0.30 + 0.70*ndv;
@@ -1128,14 +1125,14 @@ export default class Humans {
   _buildFigures() {
     this.yaw = -9 * DEG;
     const mkRef = (P, gest, hair) => { const J = bodyJoints(P); solveArm(J, P, 'L', armSpec(J, P, 'L', gest[0])); solveArm(J, P, 'R', armSpec(J, P, 'R', gest[1])); return bodyPrims(J, P, hair); };
-    this.parent = new Figure(mkRef(ADULT, ['lean', 'hug'], 'bun'), 30000, 71);
-    this.child = new Figure(mkRef(CHILD, ['hug', 'hug'], 'tail'), 24000, 83);
+    this.parent = new Figure(mkRef(ADULT, ['lean', 'hug'], 'bun'), 42000, 71);
+    this.child = new Figure(mkRef(CHILD, ['hug', 'hug'], 'tail'), 34000, 83);
     this.parent.setHeights(mkRef(ADULT, ['lean', 'hug'], 'bun'));
     this.child.setHeights(mkRef(OLD, ['hug', 'hug'], 'tail'));
     const px = this.uPx = this.ctx.height / (2 * Math.tan(WIDE_FOV * DEG / 2));
     const mkU = () => ({
       uT: { value: 0 }, uTime: { value: 0 }, uDisStart: { value: 1e9 }, uDisSpan: { value: 1 }, uDisMode: { value: 0 }, uCenter: { value: new THREE.Vector3() }, uPoleW: { value: this.pole }, uCamPos: { value: new THREE.Vector3() },
-      uPx: { value: px }, uSize: { value: 0.0125 }, uBright: { value: 0.30 }, uBias: { value: 0.03 }, uPulse: { value: 0 },
+      uPx: { value: px }, uSize: { value: 0.0145 }, uBright: { value: 0.22 }, uBias: { value: 0.03 }, uPulse: { value: 0 },
       uWarm: { value: new THREE.Vector3(1.0, 0.50, 0.17) }, uRim: { value: new THREE.Vector3(1.0, 0.74, 0.46) },
       uOcc: { value: 0.024 }, uInset: { value: 0.008 }, uColor: { value: new THREE.Vector3(0.050, 0.020, 0.006) },
     });
@@ -1191,7 +1188,7 @@ export default class Humans {
   }
 
   _figUniforms(t, T) {
-    for (const f of [this.parent, this.child]) { f.U.uT.value = t; f.U.uTime.value = T; f.U.uDisStart.value = 1e9; f.U.uPulse.value = 0; f.U.uBright.value = 0.30; }
+    for (const f of [this.parent, this.child]) { f.U.uT.value = t; f.U.uTime.value = T; f.U.uDisStart.value = 1e9; f.U.uPulse.value = 0; f.U.uBright.value = 0.22; }
   }
 
   // ------------------------------------------------------------ hand
@@ -1210,7 +1207,6 @@ export default class Humans {
     g.setAttribute('aFade', new THREE.BufferAttribute(smp.fade, 1));
     g.setAttribute('aNail', new THREE.BufferAttribute(smp.nail, 1));
     g.setAttribute('aAO', new THREE.BufferAttribute(smp.ao, 1));
-    this.handCount = n;
 
     // hand orientation in world: fingers up-left, away; back of the hand toward camera
     const Y = V.norm([-0.30, 1.0, -0.32]);
@@ -1225,9 +1221,9 @@ export default class Humans {
     this.tip0 = this.tipLocal.clone().applyMatrix4(this.handBase);
 
     this.handU = {
-      uTime: { value: 0 }, uSize: { value: 1.8 * this.uScale }, uBright: { value: 0.72 }, uFocus: { value: 2 }, uCoC: { value: 70 * this.uScale }, uBias: { value: 0.0015 },
-      uL: { value: new THREE.Vector3(-0.55, 0.65, 0.55).normalize() },
-      uWarm: { value: new THREE.Vector3(1.0, 0.50, 0.23) }, uWarm2: { value: new THREE.Vector3(0.72, 0.17, 0.06) }, uRim: { value: new THREE.Vector3(0.42, 0.60, 1.0) },
+      uTime: { value: 0 }, uSize: { value: 2.0 * this.uScale }, uBright: { value: 1.0 }, uFocus: { value: 2 }, uCoC: { value: 70 * this.uScale }, uBias: { value: 0.0015 },
+      uL: { value: new THREE.Vector3(-0.80, 0.50, 0.35).normalize() },
+      uWarm: { value: new THREE.Vector3(1.0, 0.56, 0.24) }, uWarm2: { value: new THREE.Vector3(0.60, 0.11, 0.03) }, uRim: { value: new THREE.Vector3(0.42, 0.60, 1.0) },
       uOcc: { value: 2.6 * this.uScale }, uInset: { value: 0.0012 },
       uColor: { value: new THREE.Vector3(0.055, 0.022, 0.007) },
     };
@@ -1237,7 +1233,7 @@ export default class Humans {
     this.handGroup.add(occ); this.handGroup.add(glow);
 
     // fingertip glow (the atom)
-    this.tipU = { uSize: { value: 26 }, uScale: { value: this.uScale }, uCol: { value: new THREE.Vector3() } };
+    this.tipU = { uSize: { value: 34 }, uScale: { value: this.uScale }, uCol: { value: new THREE.Vector3() } };
     const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([this.tipLocal.x, this.tipLocal.y, this.tipLocal.z]), 3));
     const tp = new THREE.Points(tg, new THREE.ShaderMaterial({ vertexShader: SPRITE_VERT, fragmentShader: SPRITE_FRAG, uniforms: this.tipU, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
     tp.frustumCulled = false; tp.renderOrder = 8;
@@ -1346,8 +1342,7 @@ export default class Humans {
       ang = -8.4 * Math.pow(k, 1.8);
       len = Math.min(Math.abs(ang), Math.PI * 2 - 1e-3);
     }
-    const sgnLen = len;
-    this.domeU.uAng.value = ang; this.domeU.uLen.value = -sgnLen;
+    this.domeU.uAng.value = ang; this.domeU.uLen.value = -len;
     this.domeU.uGain.value = 0.30 * (1 - 0.35 * smoothstep(0, 2.5, len));
     this.trailU.uGain.value = 0.85 * (1 - 0.3 * smoothstep(1.0, 6.2, len));
     this.domeU.uLowMix.value = smoothstep(0.0, 0.12, len);
@@ -1356,28 +1351,12 @@ export default class Humans {
     this.starU.uTwinkle.value = life ? 0.05 : 0.12;
     this.starU.uFaint.value = life ? 1 - 0.92 * smoothstep(0.0, 0.18, len) : 1;
     this.trails.visible = life && len > 1e-3;
-    if (typeof location !== 'undefined') {
-      const q = new URLSearchParams(location.search); const off = (q.get('off') || '').split(',');
-      if (q.get('nostars') || off.includes('stars')) { this.starPts.visible = false; }
-      if (off.includes('trails')) this.trails.visible = false;
-      this._dbgOff = off;
-      this.sceneWide.traverse(o => { if (o.name) o.visible = !off.includes(o.name); });
-    }
     this.trailU.uAng.value = ang; this.trailU.uLen.value = -len; // trail extends backwards in time (opposite to motion)
     this.grassU.uTime.value = T;
 
     // figures
     this._figUniforms(tc, T);
     const pose = this._poseFigures(mode, tc);
-    const dbg = typeof location !== 'undefined' && new URLSearchParams(location.search).get('hz');
-    if (dbg) { // debug: orbit a close camera around the pair
-      const [dist, yawd] = dbg.split(',').map(Number);
-      const c = this.camWide, ctr = new THREE.Vector3(this.gx, this.gy + 0.45, ZC);
-      const base = new THREE.Vector3(0, 0, 0).sub(ctr).setY(0).normalize();
-      base.applyAxisAngle(new THREE.Vector3(0, 1, 0), (yawd || 0) * DEG);
-      c.position.copy(ctr).addScaledVector(base, dist).add(new THREE.Vector3(0, 0.25, 0));
-      c.lookAt(ctr); c.updateMatrixWorld(true);
-    }
     if (life) {
       const P = this.parent.U, C = this.child.U;
       P.uDisStart.value = 3.0; P.uDisSpan.value = 2.6; P.uDisMode.value = 0;
@@ -1391,7 +1370,7 @@ export default class Humans {
         const beat = Math.exp(-x * 16) + 0.55 * (x > 0.16 ? Math.exp(-(x - 0.16) * 16) : 0);
         C.uPulse.value = 0.10 * beat * (1 - smoothstep(7.5, 9, tc) * 0.5);
       } else {
-        C.uBright.value = 0.30 * (1 - 0.18 * smoothstep(9.0, 9.4, tc));
+        C.uBright.value = 0.22 * (1 - 0.18 * smoothstep(9.0, 9.4, tc));
       }
     }
     const exposure = life ? lerp(1.0, 0.8, smoothstep(10, 14, tc)) : 1.0;
@@ -1425,7 +1404,7 @@ export default class Humans {
     // the atom: a soft glow kindles at the fingertip when the reticle locks (local t = 4)
     const k = smoothstep(3.7, 4.6, tc);
     const pulse = Math.exp(-Math.max(0, tc - 4.0) * 2.5) * (tc > 4 ? 1 : 0);
-    const g = 0.10 * k + 0.5 * pulse;
+    const g = 0.30 * k + 1.2 * pulse;
     this.tipU.uCol.value.set(1.0 * g, 0.80 * g, 0.55 * g);
     return {
       scene: this.sceneHand, camera: cam, target: tip,
