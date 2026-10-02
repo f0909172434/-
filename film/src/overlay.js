@@ -2,6 +2,7 @@
 // Everything is a pure function of global time T, drawn in a 1920x804 design space.
 import { clamp, lerp, smoothstep, envelope, easeOutBack, easeOutCubic, easeInOutCubic, easeInCubic } from './lib/ease.js';
 import { hash1 } from './lib/random.js';
+import { crackGeometry, crackReach } from './lib/crack.js';
 import { CSS } from './look/palette.js';
 
 const BW = 1920, BH = 804, M = 56;
@@ -546,59 +547,13 @@ export class Overlay {
   }
 
   // ---------------------------------------------------------------- title: the crack 卜
-  // Built once, deterministically. The main crack runs top to bottom through the junction J (where the heated
-  // rod touched the hollow); the branch leaves J to the right and slightly down, like the stroke of 卜; fine
-  // twigs split off both, each starting when the parent's front reaches it. Every polyline grows as
-  // front(t) = L (1 - e^(-t/tau)) / (1 - e^-5), so the whole crack is there within ~0.4 s of the snap.
+  // The same crack as the bone and lineage scenes (lib/crack.js), mapped to the design frame: junction at
+  // (962, 352), 338 px tall, 1.0 relative width = 2.7 px.
   buildCrack() {
-    const cx = BW / 2, top = 234, bot = 572, J = [cx + 2, 352];
-    const K = 1 - Math.exp(-5);
-    const jag = (x0, y0, x1, y1, seed, rough, levels) => {
-      let pts = [[x0, y0], [x1, y1]];
-      for (let l = 0; l < levels; l++) {
-        const nx = [pts[0]];
-        for (let i = 0; i < pts.length - 1; i++) {
-          const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-          const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
-          const off = (hash1(seed + l * 101.3 + i * 7.77) - 0.5) * 2 * rough * L;
-          const t = 0.5 + (hash1(seed + l * 13.1 + i * 3.3) - 0.5) * 0.35;
-          nx.push([ax + dx * t - dy / L * off, ay + dy * t + dx / L * off], [bx, by]);
-        }
-        pts = nx;
-      }
-      return pts;
-    };
-    const mk = (pts, t0, tau, w0, w1, glow) => {
-      const cum = [0];
-      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-      return { pts, cum, L: cum[cum.length - 1], t0, tau, w0, w1, glow };
-    };
-    const reach = (P, s) => P.t0 - P.tau * Math.log(Math.max(1e-4, 1 - (s / P.L) * K));
-    const lines = [];
-    const up = mk(jag(J[0], J[1], cx - 6, top, 11.3, 0.10, 6), 0, 0.07, 2.7, 0.55, 1);
-    const down = mk(jag(J[0], J[1], cx + 8, bot, 23.9, 0.09, 7), 0, 0.08, 2.7, 0.5, 1);
-    const br = mk(jag(J[0], J[1], cx + 132, J[1] + 76, 37.1, 0.12, 6), 0.06, 0.07, 2.3, 0.5, 0.9);
-    lines.push(up, down, br);
-    const twigs = (P, seed, n, maxLen, depth) => {
-      for (let k = 0; k < n; k++) {
-        const s = P.L * (0.1 + 0.82 * hash1(seed + k * 3.71));
-        let i = 1; while (i < P.cum.length - 1 && P.cum[i] < s) i++;
-        const A = P.pts[i - 1], B = P.pts[i], u = (s - P.cum[i - 1]) / Math.max(P.cum[i] - P.cum[i - 1], 1e-6);
-        const x = A[0] + (B[0] - A[0]) * u, y = A[1] + (B[1] - A[1]) * u;
-        const dir = Math.atan2(B[1] - A[1], B[0] - A[0]);
-        const side = hash1(seed + k * 9.13) < 0.5 ? -1 : 1;
-        const ang = dir + side * (0.4 + 0.65 * hash1(seed + k * 5.37));
-        const len = maxLen * (0.3 + 0.7 * hash1(seed + k * 2.93)) * (1 - 0.55 * s / P.L);
-        const T0 = reach(P, s) + 0.015 + 0.06 * hash1(seed + k * 1.1);
-        const tw = mk(jag(x, y, x + Math.cos(ang) * len, y + Math.sin(ang) * len, seed + k * 17.7, 0.2, 3), T0, 0.05,
-          Math.max(0.45, P.w0 * (0.5 - 0.3 * s / P.L)), 0.25, 0.45);
-        lines.push(tw);
-        if (depth > 0 && hash1(seed + k * 4.4) < 0.45) twigs(tw, seed + k * 31.3, 1, len * 0.45, depth - 1);
-      }
-    };
-    twigs(up, 101, 7, 34, 1); twigs(down, 202, 10, 40, 1); twigs(br, 303, 6, 26, 1);
-    for (const P of lines) P.reach = s => reach(P, s);
-    return { J, lines };
+    const C = crackGeometry(), X = 962, Y = 352, S = 338, Wpx = 2.7;
+    const lines = C.lines.map(P => ({ ...P, pts: P.pts.map(([x, y]) => [X + x * S, Y - y * S]), cum: P.cum.map(c => c * S), L: P.L * S,
+      w0: P.w0 * Wpx, w1: P.w1 * Wpx, reach: s => crackReach(P, s / S) }));
+    return { J: [X, Y], lines };
   }
 
   // title: in the dark a point heats up (246.0), the crack snaps (246.5) and draws 卜 in light, white-hot where
