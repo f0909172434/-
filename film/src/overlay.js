@@ -56,11 +56,11 @@ export class Overlay {
     const g = this.g;
     g.font = font; g.fillStyle = color; g.textAlign = align; g.letterSpacing = `${ls}px`;
     g.filter = blur > 0.05 ? `blur(${blur * this.s}px)` : 'none';
-    if (glow) { g.shadowColor = glow.color; g.shadowBlur = glow.blur * this.s; g.fillText(str, x, y); }
-    if (shadow) { g.shadowColor = shadow.color; g.shadowBlur = shadow.blur * this.s; }
-    else g.shadowColor = 'transparent';
     // letterSpacing adds trailing space after the last glyph; compensate for centred text
     const dx = align === 'center' ? ls / 2 : align === 'right' ? ls : 0;
+    if (glow) { g.shadowColor = glow.color; g.shadowBlur = glow.blur * this.s; g.fillText(str, x + dx, y); }
+    if (shadow) { g.shadowColor = shadow.color; g.shadowBlur = shadow.blur * this.s; }
+    else g.shadowColor = 'transparent';
     g.fillText(str, x + dx, y);
     g.shadowColor = 'transparent'; g.shadowBlur = 0; g.filter = 'none'; g.letterSpacing = '0px';
   }
