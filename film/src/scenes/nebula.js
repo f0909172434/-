@@ -91,7 +91,7 @@ void main(){
   float g = pow(max(1.0 - abs(pgfbm(q*0.5 + 4.2, P*0.5, 3)), 0.0), 4.0);
   float b = pgfbm(p*0.5 + 9.9, P*0.5, 4)*0.5 + 0.5;
   float a = pgfbm(p + 2.2, P, 3)*0.5 + 0.5;
-  gl_FragColor = vec4(r, g, b, a);
+  gl_FragColor = vec4(clamp(r*0.6, 0.0, 1.0), g, b, a);
 }`;
 
 const SHEET_VERT = /* glsl */`
@@ -104,7 +104,7 @@ void main(){
 }`;
 const SHEET_FRAG = /* glsl */`
 uniform sampler2D tStrand; uniform vec3 uCamPos, uColA, uColB;
-uniform float uGain, uWA, uWB, uAng, uSeed, uDiffuse, uStretch, uScaleA, uFar;
+uniform float uPatch, uGain, uWA, uWB, uAng, uSeed, uDiffuse, uStretch, uScaleA, uFar, uHazeMode;
 uniform vec4 uBox; // half across, along min, along max, edge softness
 varying vec3 vW; varying vec3 vN; varying vec2 vUV;
 void main(){
@@ -113,16 +113,26 @@ void main(){
   float e = 1.0/(ndv*0.93 + 0.07);
   float ca = cos(uAng), sa = sin(uAng);
   vec2 p = vec2(ca*vUV.x - sa*vUV.y, sa*vUV.x + ca*vUV.y);
-  vec4 w = texture2D(tStrand, p*vec2(0.004, 0.018)*uScaleA + uSeed);
-  vec2 q = vec2(p.x*0.011, p.y*0.011*uStretch)*uScaleA + vec2((w.a - 0.5)*0.3, (w.a - 0.5)*0.9 + (w.b - 0.5)*0.4) + uSeed*0.37;
-  float s1 = texture2D(tStrand, q).r;
-  float s2 = texture2D(tStrand, q + vec2(0.003, 0.016)).r;
-  float med = texture2D(tStrand, q*vec2(0.5, 0.45) + 0.37).g;
-  float patchy = smoothstep(0.42, 0.8, texture2D(tStrand, p*vec2(0.0025, 0.007)*uScaleA + uSeed*1.7).b);
   float edge = smoothstep(uBox.x, uBox.x*(1.0 - uBox.w), abs(vUV.y)) * smoothstep(uBox.y, uBox.y + 12.0, vUV.x) * smoothstep(uBox.z, uBox.z - 12.0, vUV.x);
-  float env = patchy*edge;
-  vec3 c = uColA*uWA*(s1 + 0.3*med + uDiffuse) + uColB*uWB*(s2 + 0.3*med + uDiffuse);
   float fade = smoothstep(0.8, 4.5, dist)*mix(1.0, 0.25, smoothstep(uFar*0.3, uFar, dist));
+  if (edge*fade < 0.002) discard;
+  float bias = uHazeMode*3.5;
+  vec4 w = texture2D(tStrand, p*vec2(0.003, 0.009)*uScaleA + uSeed, bias);
+  float patchy = smoothstep(uPatch, uPatch + 0.38, w.b);
+  float env = patchy*edge;
+  if (env*fade < 0.002) discard;
+  vec2 q = vec2(p.x*0.011, p.y*0.011*uStretch)*uScaleA + vec2((w.a - 0.5)*0.3, (w.a - 0.5)*0.9 + (w.b - 0.5)*0.4) + uSeed*0.37;
+  vec4 t1 = texture2D(tStrand, q, bias);
+  float s1 = t1.r*1.7, med = t1.g;
+  float s2 = texture2D(tStrand, q + vec2(0.003, 0.016), bias).r*1.7;
+  vec3 c = uColA*uWA*(s1 + 0.3*med + uDiffuse) + uColB*uWB*(s2 + 0.3*med + uDiffuse);
+  c += vec3(1.0, 0.85, 0.95)*s1*s2*3.0*uWA*uWB;   // hot cores where the species overlap
+  if (uHazeMode > 0.5) {
+    float es = 1.0/(ndv*0.75 + 0.25);
+    c = (uColA*uWA + uColB*uWB)*(0.5*s1 + 0.6*med + 0.12)*es;
+    gl_FragColor = vec4(c*env*uGain*fade*0.9, 0.0);
+    return;
+  }
   gl_FragColor = vec4(c*env*e*uGain*fade, 1.0);
 }`;
 
@@ -143,7 +153,7 @@ const SHEETS = [
   // big left wall, two-tone, folds running along the flight path
   { O: [-6.0, 0.5, -40], U: [0.25, 1, 0.05], V: [0.06, 0.0, -1], A: 13, B0: -48, B1: 100, amp: 2.0, lam: 7, curv: -0.015, ang: 0.08, colA: HA, colB: OIII, wA: 1.0, wB: 0.8, gain: 0.05, seed: 0.13, stretch: 6, diffuse: 0.03 },
   // right wall further away, mostly hydrogen
-  { O: [13.5, 1.5, -60], U: [-0.35, 1, 0.1], V: [-0.1, 0.02, -1], A: 15, B0: -45, B1: 95, amp: 2.6, lam: 9, curv: 0.01, ang: -0.15, colA: HA_DEEP, colB: HA, wA: 0.9, wB: 0.6, gain: 0.04, seed: 0.51, stretch: 5, diffuse: 0.03 },
+  { O: [13.5, 1.5, -60], U: [-0.35, 1, 0.1], V: [-0.1, 0.02, -1], A: 15, B0: -45, B1: 95, amp: 2.6, lam: 9, curv: 0.01, ang: -0.15, colA: HA_DEEP, colB: OIII_B, wA: 0.9, wB: 0.45, gain: 0.038, patch: 0.3, seed: 0.51, stretch: 5, diffuse: 0.03 },
   // ceiling, oxygen teal
   { O: [3, 7.0, -55], U: [1, 0.12, 0], V: [0.0, 0.03, -1], A: 18, B0: -40, B1: 95, amp: 2.2, lam: 8, curv: 0.008, ang: 0.25, colA: OIII, colB: OIII_B, wA: 1.0, wB: 0.5, gain: 0.045, seed: 0.77, stretch: 5, diffuse: 0.025 },
   // floor, faint deep red (keeps the subtitle zone calm)
@@ -183,13 +193,12 @@ function buildSheet(N, d, mat) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aUV', new THREE.BufferAttribute(uv, 2));
   g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.ShaderMaterial({ vertexShader: SHEET_VERT, fragmentShader: SHEET_FRAG, uniforms: {},
-    blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true, side: THREE.DoubleSide });
+  const m = pointsMaterial(SHEET_VERT, SHEET_FRAG, {}); m.side = THREE.DoubleSide;
   m.uniforms.tStrand = mat.uniforms.tStrand; m.uniforms.uCamPos = mat.uniforms.uCamPos;
   Object.assign(m.uniforms, {
     uColA: { value: new THREE.Vector3(...d.colA) }, uColB: { value: new THREE.Vector3(...d.colB) },
-    uGain: { value: d.gain }, uWA: { value: d.wA }, uWB: { value: d.wB }, uAng: { value: d.ang }, uSeed: { value: d.seed },
-    uDiffuse: { value: d.diffuse }, uStretch: { value: d.stretch }, uScaleA: { value: 1 }, uFar: { value: 150 },
+    uGain: { value: d.gain }, uPatch: { value: d.patch ?? 0.42 }, uWA: { value: d.wA }, uWB: { value: d.wB }, uAng: { value: d.ang }, uSeed: { value: d.seed },
+    uDiffuse: { value: d.diffuse }, uStretch: { value: d.stretch }, uScaleA: { value: 1 }, uFar: { value: 150 }, uHazeMode: mat.uniforms.uHazeMode,
     uBox: { value: new THREE.Vector4(d.A, d.B0, d.B1, 0.45) },
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false;
@@ -266,8 +275,8 @@ function buildRemnantParticles() {
   const tp = [], tc = [];
   {
     const P = [];
-    for (let u = -1.0; u <= 1.6; u += 0.01) P.push([u * 2.6 + 0.5 * Math.sin(2.2 * u), u * 1.0 + 0.35 * Math.sin(3.1 * u + 1.0), -u * 6.0]);
-    ribbon(P, { h: Math.hypot(2.6, 1.0, 6.0) * 0.01, threads: 12, width: 0.38, twist: 0.12, density: 55, envFreq: 0.08, seed: 3.3, split: 0.1, jitter: 0.005, I: 0.22, core: 0.6,
+    for (let u = -0.45; u <= 1.8; u += 0.01) P.push([u * 2.6 + 0.5 * Math.sin(2.2 * u), u * 1.0 + 0.35 * Math.sin(3.1 * u + 1.0), -u * 6.0]);
+    ribbon(P, { h: Math.hypot(2.6, 1.0, 6.0) * 0.01, threads: 12, width: 0.3, twist: 0.12, density: 110, envFreq: 0.08, seed: 3.3, split: 0.1, jitter: 0.004, I: 0.22, core: 0.8,
       out: (p, c, sz) => { tp.push(p[0], p[1], p[2]); tc.push(c[0], c[1], c[2], sz); } });
   }
   // free ribbons: long, gently curving
@@ -304,17 +313,6 @@ function buildRemnantParticles() {
       }
     }
   }
-  // diffuse emission clouds (glow only)
-  for (let i = 0; i < 6000; i++) {
-    const p = [r.range(-34, 34), r.range(-16, 16), r.range(-130, 6)];
-    if (Math.hypot(p[0], p[1]) < 4) continue;
-    const dns = N.fbm(p[0] * 0.04, p[1] * 0.04, p[2] * 0.04, 3);
-    if (dns < 0.05 + r.next() * 0.3) continue;
-    const hk = smoothstep(-0.25, 0.25, N.n(p[0] * 0.03 + 50, p[1] * 0.03, p[2] * 0.03));
-    const c = mixc(mixc(HA, HA_DEEP, 0.4), OIII, hk);
-    const I = 0.022 * (0.3 + dns);
-    glow(p, [c[0] * I, c[1] * I, c[2] * I], r.range(11.0, 16.0), 0);
-  }
   // near-field stars inside the volume (parallax) + drifting dust motes
   for (let i = 0; i < 3000; i++) {
     const p = [r.range(-40, 40), r.range(-20, 20), r.range(-130, 6)];
@@ -340,7 +338,239 @@ function buildRemnantParticles() {
 }
 
 // ================================================================== DISK
-function buildDisk(ctx) { return null; }
+// Disk lies in the xz-plane, star at origin, rotation counter-clockwise seen from +y.
+// Every particle position is a closed-form function of time: infall from the parent cloud
+// (angular momentum spin-up, streamers), then Keplerian orbit w = W0 r^-1.5.
+const DISK = {
+  W0: 3.0, IGN: 7.0, RCLUMP: 6.6, TH_CLUMP0: 1.75, ATOM_DTH: 0.8, ATOM_R0: 17, ATOM_Y0: 3.2,
+  gaps: [3.9, 6.6, 10.8, 15.2],
+};
+DISK.omega = r => DISK.W0 * Math.pow(r, -1.5);
+DISK.clumps = [
+  { r: 3.9, th: 0.4, n: 2600, s: 1.0 },
+  { r: 10.8, th: DISK.TH_CLUMP0, n: 5200, s: 1.5 },   // ours: the proto-Earth
+  { r: 6.6, th: 4.3, n: 4200, s: 1.3 },
+  { r: 15.2, th: 1.2, n: 3600, s: 1.2 },
+  { r: 8.6, th: 5.6, n: 1500, s: 0.7 },
+];
+DISK.clumpPos = (c, t) => { const th = c.th + DISK.omega(c.r) * t; return [c.r * Math.cos(th), 0, c.r * Math.sin(th)]; };
+
+const DISK_COMMON = /* glsl */`
+uniform float uTime, uLight, uFront, uPre, uGap, uAmb;
+uniform vec4 uGaps;
+float omegaK(float r){ return 3.0*pow(max(r, 0.4), -1.5); }
+float hR(float r){ return 0.03*pow(r, 1.25); }
+float gapF(float r){
+  vec4 d = (vec4(r) - uGaps)/vec4(0.35, 0.55, 0.6, 0.7);
+  return 1.0 - uGap*(0.75*exp(-d.x*d.x) + 0.92*exp(-d.y*d.y) + 0.85*exp(-d.z*d.z) + 0.8*exp(-d.w*d.w));
+}
+// illumination by the new star: light front sweeps outward, flared surface layers lit, rotating shadow lanes
+vec3 starLight(float rr, float th, float zn){
+  float front = smoothstep(rr - 2.5, rr, uFront);
+  float surf = mix(0.22, 1.0, smoothstep(0.15, 1.6, abs(zn)));
+  float lanePh = th - 0.22*uTime;
+  float lane = 1.0 - 0.5*pow(0.5 + 0.5*cos(2.0*lanePh + 0.6), 4.0)*smoothstep(2.0, 5.0, rr) - 0.35*pow(0.5 + 0.5*cos(lanePh + 2.4), 8.0)*smoothstep(2.0, 5.0, rr);
+  float fall = (0.75/(1.0 + 0.045*rr*rr) + 0.015)*(0.4 + 0.6*smoothstep(1.2, 5.0, rr));
+  vec3 tcol = mix(vec3(1.0, 0.52, 0.3), vec3(1.0, 0.88, 0.72), smoothstep(13.0, 2.5, rr));
+  return tcol*uLight*front*surf*lane*fall;
+}
+`;
+
+const DISK_VERT = DISK_COMMON + /* glsl */`
+attribute vec4 aOrb;    // r, theta0, z (in scale heights), rand
+attribute vec4 aCloud;  // cloud radius, cloud latitude, arrival time, rand2
+uniform float uFocal, uWorld, uMinPx, uCap, uGlowMode, uGain, uStarDepth, uTauGain;
+varying vec3 vCol; varying float vTau;
+void main(){
+  float r = aOrb.x, th0 = aOrb.y, zn = aOrb.z, rnd = aOrb.w;
+  float rc = aCloud.x, lat = aCloud.y, ta = aCloud.z, rnd2 = aCloud.w;
+  float t = uTime;
+  float f = clamp((t + 2.0)/(ta + 2.0), 0.0, 1.0);
+  float e = f*f*(3.0 - 2.0*f);
+  e = mix(e, f*f, 0.5);
+  float rr = mix(rc*cos(lat), r, e);
+  // planets clear gaps: material is pushed to the gap edges, piling up into bright rings
+  vec4 dg = (vec4(r) - uGaps)/vec4(0.4, 0.6, 0.55, 0.6);
+  vec4 push = sign(dg)*exp(-dg*dg)*vec4(0.4, 0.6, 0.55, 0.6)*vec4(0.8, 0.95, 0.6, 0.55);
+  rr += uGap*e*(push.x + push.y + push.z + push.w);
+  float th = th0 + omegaK(r)*t + 2.6*(1.0 - e)*(1.0 - e)*(1.0 + rc*0.06);
+  float h = hR(rr);
+  float y = mix(rc*sin(lat), zn*h, e);
+  vec3 pos = vec3(rr*cos(th), y, rr*sin(th));
+  // spiral density wave (pattern rotates rigidly; matter flows through it)
+  float arm = 0.5 + 0.5*cos(2.0*(th - 0.11*t) - 3.6*log(rr));
+  arm = mix(1.0, 0.35 + 1.3*pow(arm, 2.5), e*smoothstep(3.0, 7.0, rr));
+  float dust = step(0.32, rnd);
+  vec3 alb = mix(vec3(0.55, 0.62, 0.78), vec3(0.95, 0.62, 0.36), dust) * (0.65 + 0.7*rnd2);
+  // ambient remnant light (teal / magenta), fading as the gas falls in and heats
+  vec3 amb = mix(vec3(0.9, 0.12, 0.35), vec3(0.1, 0.7, 0.8), step(0.5, rnd2))*uAmb*(1.0 - 0.75*e);
+  // protostar / accretion heating before ignition: deep red-orange, hot inside
+  float heat = uPre*e*0.25/(1.0 + 0.04*rr*rr);
+  vec3 warm = vec3(1.0, 0.32, 0.08)*heat;
+  vec3 lit = starLight(rr, th, zn)*alb;
+  // inner rim thermal glow after ignition
+  lit += vec3(1.0, 0.55, 0.25)*uLight*smoothstep(uFront - 1.0, uFront, 1.0)*exp(-(rr - 1.3)*(rr - 1.3)*3.0)*0.6;
+  vec3 col = (amb + warm + lit)*arm*e + amb*(1.0 - e)*1.6;
+  vec4 mv = modelViewMatrix*vec4(pos, 1.0);
+  float d = -mv.z;
+  vTau = uGlowMode*uTauGain*dust*e*exp(-zn*zn*1.2)*smoothstep(uStarDepth + 1.0, uStarDepth - 3.0, d)*smoothstep(1.0, 2.0, rr)*(1.0 - smoothstep(4.0, 8.0, rr));
+  float sz = uWorld*(0.6 + 0.8*rnd2)*uFocal/max(d, 0.05);
+  float s = clamp(sz, uMinPx, uCap);
+  vCol = col*uGain*(sz*sz)/(s*s)*smoothstep(0.5, 3.0, d);
+  gl_PointSize = s;
+  gl_Position = projectionMatrix*mv;
+}`;
+
+const CLUMP_VERT = DISK_COMMON + /* glsl */`
+attribute vec4 aOff;   // gaussian offset (x radial, y vertical, z tangential), rand
+attribute vec4 aC;     // clump r, theta0, scale, rand2
+uniform float uFocal, uWorld, uMinPx, uCap, uForm, uGain;
+varying vec3 vCol;
+void main(){
+  float r = aC.x, t = uTime;
+  float th = aC.y + omegaK(r)*t;
+  float form = uForm;
+  // early: material spread along the orbit; later: collapses into a tight knot
+  float sig = mix(1.1, 0.12, form)*aC.z;
+  float stretch = mix(4.0, 1.0, form);
+  vec3 o = aOff.xyz*sig*vec3(1.0, 0.5, stretch);
+  // swirl inside the clump
+  float sw = (1.0 - form*0.3)*1.2*t*(0.6 + aOff.w)/(0.3 + length(aOff.xyz));
+  vec2 oo = vec2(o.x*cos(sw) - o.z*sin(sw), o.x*sin(sw) + o.z*cos(sw));
+  o.x = oo.x; o.z = oo.y;
+  float rr = r + o.x; float tht = th + o.z/r;
+  vec3 pos = vec3(rr*cos(tht), o.y, rr*sin(tht));
+  vec3 alb = vec3(0.95, 0.68, 0.42)*(0.7 + 0.6*aC.w);
+  vec3 col = starLight(rr, tht, 1.2)*alb*1.4;
+  float core = exp(-dot(aOff.xyz, aOff.xyz)*1.2);
+  col += vec3(1.0, 0.45, 0.15)*form*form*core*0.2;   // accretion-heated core
+  col += vec3(0.6, 0.25, 0.3)*uPre*0.3;
+  vec4 mv = modelViewMatrix*vec4(pos, 1.0);
+  float d = -mv.z;
+  float sz = uWorld*(0.5 + 0.7*aC.w)*uFocal/max(d, 0.05);
+  float s = clamp(sz, uMinPx, uCap);
+  vCol = col*uGain*(sz*sz)/(s*s);
+  gl_PointSize = s;
+  gl_Position = projectionMatrix*mv;
+}`;
+
+const JET_VERT = /* glsl */`
+attribute vec4 aJ;  // phase, side, radial rand, angle
+uniform float uTime, uFocal, uJet, uMinPx;
+varying vec3 vCol;
+void main(){
+  float L = 13.0;
+  float u = fract(aJ.x + uTime*0.12);
+  float y = aJ.y*u*L;
+  float knot = 0.4 + 0.9*pow(0.5 + 0.5*sin(u*40.0 - uTime*3.0), 6.0);
+  float rad = (0.08 + 0.35*u*u)*aJ.z;
+  vec3 pos = vec3(rad*cos(aJ.w), y, rad*sin(aJ.w));
+  vec4 mv = modelViewMatrix*vec4(pos, 1.0);
+  float d = -mv.z;
+  float sz = 0.06*uFocal/max(d, 0.05); float s = max(sz, uMinPx);
+  vCol = vec3(0.45, 0.7, 1.0)*uJet*knot*(1.0 - u)*(1.0 - u)*(sz*sz)/(s*s)*0.18;
+  gl_PointSize = s;
+  gl_Position = projectionMatrix*mv;
+}`;
+
+const STAR_FRAG = /* glsl */`
+uniform float uCore, uHalo, uSpike, uRed;
+varying vec2 vUv;
+void main(){
+  vec2 p = (vUv - 0.5)*2.0; float d = length(p);
+  vec3 cHot = mix(vec3(1.0, 0.93, 0.8), vec3(1.0, 0.35, 0.12), uRed);
+  float core = exp(-d*d*900.0)*uCore;
+  float halo = exp(-d*11.0)*uHalo + exp(-d*3.5)*uHalo*0.12;
+  float ang = atan(p.y, p.x);
+  float sp = pow(abs(cos(ang*3.0)), 160.0) + 0.5*pow(abs(cos(ang*3.0 + 0.52)), 300.0);
+  float spikes = sp*exp(-d*4.5)*uSpike*smoothstep(0.0, 0.02, d);
+  vec3 c = cHot*(core + halo) + vec3(1.0, 0.85, 0.65)*spikes;
+  gl_FragColor = vec4(c*(1.0 - smoothstep(0.85, 1.0, d)), 1.0);
+}`;
+
+function buildDisk() {
+  const r = new Rand(9090), N = new Noise3(5150);
+  const ND = 360000;
+  const orb = new Float32Array(ND * 4), cl = new Float32Array(ND * 4);
+  let n = 0;
+  while (n < ND) {
+    // surface density ~ r^-0.8, taper outside 18
+    const u = r.next();
+    let rad = 1.1 + 22 * Math.pow(u, 1 / 1.3);
+    if (rad > 18 && r.next() < (rad - 18) / 5) continue;
+    const th = r.range(0, Math.PI * 2);
+    // clumpy, filamentary parent cloud
+    const rc = rad * r.range(1.4, 2.4) + 6 + 4 * N.n(Math.cos(th) * 1.5, Math.sin(th) * 1.5, rad * 0.1);
+    const lat = r.gauss() * 0.45;
+    // streamers: arrival time depends smoothly on angle and radius
+    const ta = 0.3 + 4.0 * Math.pow(rad / 22, 0.8) + 1.3 * (0.5 + 0.5 * Math.sin(2 * th + rad * 0.3)) + 0.4 * r.next();
+    orb.set([rad, th, r.gauss(), r.next()], n * 4);
+    cl.set([rc, lat, ta, r.next()], n * 4);
+    n++;
+  }
+  const dg = new THREE.BufferGeometry();
+  dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ND * 3), 3));
+  dg.setAttribute('aOrb', new THREE.BufferAttribute(orb, 4));
+  dg.setAttribute('aCloud', new THREE.BufferAttribute(cl, 4));
+  // glow subset (every 6th)
+  const NG = Math.floor(ND / 6);
+  const go = new Float32Array(NG * 4), gcl = new Float32Array(NG * 4);
+  for (let i = 0; i < NG; i++) { go.set(orb.subarray(i * 24, i * 24 + 4), i * 4); gcl.set(cl.subarray(i * 24, i * 24 + 4), i * 4); }
+  const gg = new THREE.BufferGeometry();
+  gg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NG * 3), 3));
+  gg.setAttribute('aOrb', new THREE.BufferAttribute(go, 4));
+  gg.setAttribute('aCloud', new THREE.BufferAttribute(gcl, 4));
+  // clumps
+  const NC = DISK.clumps.reduce((a, c) => a + c.n, 0);
+  const off = new Float32Array(NC * 4), cc = new Float32Array(NC * 4);
+  let k = 0;
+  for (const c of DISK.clumps) for (let i = 0; i < c.n; i++) {
+    const g = [r.gauss(), r.gauss(), r.gauss()];
+    const m = Math.pow(r.next(), 0.6);
+    off.set([g[0] * m, g[1] * m, g[2] * m, r.next()], k * 4);
+    cc.set([c.r, c.th, c.s, r.next()], k * 4); k++;
+  }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NC * 3), 3));
+  cg.setAttribute('aOff', new THREE.BufferAttribute(off, 4));
+  cg.setAttribute('aC', new THREE.BufferAttribute(cc, 4));
+  // jets
+  const NJ = 7000; const ja = new Float32Array(NJ * 4);
+  for (let i = 0; i < NJ; i++) ja.set([r.next(), i % 2 ? 1 : -1, Math.abs(r.gauss()), r.range(0, Math.PI * 2)], i * 4);
+  const jg = new THREE.BufferGeometry();
+  jg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NJ * 3), 3));
+  jg.setAttribute('aJ', new THREE.BufferAttribute(ja, 4));
+  return { dg, gg, cg, jg };
+}
+
+const DISK_GLOW_FRAG = /* glsl */`
+varying vec3 vCol; varying float vTau;
+void main(){ vec2 c = gl_PointCoord-0.5; float r2 = dot(c,c)*4.0; if (r2 > 1.0) discard;
+  float a = (1.0-r2); a = a*a; gl_FragColor = vec4(vCol*a, vTau*a); }`;
+const DISK_PT_FRAG = /* glsl */`
+varying vec3 vCol;
+void main(){ vec2 c = gl_PointCoord-0.5; float r2 = dot(c,c)*4.0; if (r2 > 1.0) discard;
+  float a = exp(-r2*3.0) - 0.05; gl_FragColor = vec4(vCol*max(a,0.0), 0.0); }`;
+
+DISK.cam = t => {
+  const k = easeInOutSine(clamp((t + 1.5) / 15.5));
+  const el = lerp(1.33, 0.36, k);
+  const az = 0.95 + 0.05 * t;
+  const dist = lerp(54, 27, easeInOutCubic(clamp((t + 1.5) / 15.5)));
+  return { pos: [dist * Math.cos(el) * Math.cos(az), dist * Math.sin(el), dist * Math.cos(el) * Math.sin(az)], el, az, dist };
+};
+DISK.atom = t => {
+  const c = DISK.clumps[1];
+  const s = smoothstep(-1.6, 12.5, t);
+  const thc = c.th + DISK.omega(c.r) * t;
+  const rA = lerp(DISK.ATOM_R0, c.r, Math.pow(s, 0.85));
+  const dth = DISK.ATOM_DTH * Math.pow(1 - s, 1.2);
+  const yA = DISK.ATOM_Y0 * Math.pow(1 - s, 2);
+  const th = thc + dth + 0.05 * Math.sin(t * 1.3);
+  const w = smoothstep(9.5, 12.5, t);
+  const wob = 0.1 + 0.15 * (1 - w);
+  return [rA * Math.cos(th) + wob * Math.cos(t * 2.1), yA + 0.05 * Math.sin(t * 1.7), rA * Math.sin(th) + wob * Math.sin(t * 2.1)];
+};
 
 export default class Nebula {
   constructor(ctx) {
@@ -351,7 +581,7 @@ export default class Nebula {
   async init() {}
 
   _strandTex() {
-    if (!this.strandRT) this.strandRT = bake(this.ctx.renderer, 1024, 1024, STRAND_BAKE, {}, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping });
+    if (!this.strandRT) this.strandRT = bake(this.ctx.renderer, 1024, 1024, STRAND_BAKE, {}, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, type: THREE.UnsignedByteType });
     return this.strandRT.texture;
   }
 
@@ -380,7 +610,7 @@ export default class Nebula {
     const stars = makeStarfield({ seed: 11, count: 16000, scale: this.uScale, brightness: 0.9, band: { normal: [0.3, 0.9, 0.3], width: 0.12, frac: 0.35 } });
 
     // emission sheets
-    const sheetMat = { uniforms: { tStrand: { value: this._strandTex() }, uCamPos: { value: new THREE.Vector3() } } };
+    const sheetMat = { uniforms: { tStrand: { value: this._strandTex() }, uCamPos: { value: new THREE.Vector3() }, uHazeMode: { value: 0 } } };
     const N = new Noise3(777);
     const sheets = SHEETS.map(d => buildSheet(N, d, sheetMat));
 
@@ -436,10 +666,11 @@ export default class Nebula {
     const atom = new THREE.Points(atomGeo, atomMat); atom.frustumCulled = false;
 
     const tendril = new THREE.Points(geo.tendril, detailMat); tendril.frustumCulled = false;
-    const sceneFG = new THREE.Scene(); sceneFG.add(stars); sceneFG.add(tendril); for (const s of sheets) sceneFG.add(s); sceneFG.add(detail);
+    const sceneFG = new THREE.Scene(); sceneFG.add(stars); sceneFG.add(tendril); sceneFG.add(detail);
+    const sceneSheets = new THREE.Scene(); for (const s of sheets) sceneSheets.add(s);
     const sceneGlow = new THREE.Scene(); sceneGlow.add(glow);
     const sceneAtom = new THREE.Scene(); sceneAtom.add(atom);
-    this.built.remnant = { camera, glowRT, uT, stars, back, backMat, comp, compMat, sceneFG, sceneGlow, sceneAtom, atom, tendril, atomGeo, atomMat, detailMat, glowMat, sheetMat, counts: geo.counts };
+    this.built.remnant = { camera, glowRT, uT, stars, back, backMat, comp, compMat, sceneFG, sceneSheets, sceneGlow, sceneAtom, atom, tendril, atomGeo, atomMat, detailMat, glowMat, sheetMat, counts: geo.counts };
     return this.built.remnant;
   }
 
@@ -474,8 +705,10 @@ export default class Nebula {
       const ac = renderer.autoClear; renderer.autoClear = false;
       renderer.setRenderTarget(R.glowRT); renderer.setClearColor(0x000000, 0); renderer.clear();
       renderer.render(R.back.scene, R.back.cam);
+      R.sheetMat.uniforms.uHazeMode.value = 1; renderer.render(R.sceneSheets, cam);
       renderer.render(R.sceneGlow, cam);
       renderer.setRenderTarget(target); renderer.setClearColor(0x000000, 1);
+      R.sheetMat.uniforms.uHazeMode.value = 0; renderer.render(R.sceneSheets, cam);
       renderer.render(R.sceneFG, cam);
       renderer.render(R.comp.scene, R.comp.cam);
       renderer.render(R.sceneAtom, cam);
@@ -497,16 +730,164 @@ export default class Nebula {
     return this.updateRemnant(shot, t, T);
   }
 
+  _disk() {
+    if (this.built.disk) return this.built.disk;
+    const ctx = this.ctx;
+    const geo = buildDisk();
+    const camera = new THREE.PerspectiveCamera(35, ctx.aspect, 0.1, 600);
+    const focal = (this.H / 2) / Math.tan(THREE.MathUtils.degToRad(35 / 2));
+    const div = 3;
+    const gw = Math.round(this.W / div), gh = Math.round(this.H / div);
+    const glowRT = new THREE.WebGLRenderTarget(gw, gh, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    const shared = {
+      uTime: { value: 0 }, uLight: { value: 0 }, uFront: { value: -1 }, uPre: { value: 0.2 }, uGap: { value: 0 }, uAmb: { value: 0.2 },
+      uGaps: { value: new THREE.Vector4(...DISK.gaps) },
+    };
+    const mkMat = (vert, frag, extra) => pointsMaterial(vert, frag, { ...shared, ...extra });
+    const sc = this.uScale;
+    const uStarDepth = { value: 30 };
+    const diskMat = mkMat(DISK_VERT, DISK_PT_FRAG, { uFocal: { value: focal }, uWorld: { value: 0.042 }, uMinPx: { value: Math.max(0.8, 1.1 * sc) }, uCap: { value: 14 * sc }, uGlowMode: { value: 0 }, uGain: { value: 0.36 }, uStarDepth, uTauGain: { value: 0 } });
+    const glowMat = pointsMaterial(DISK_VERT, DISK_GLOW_FRAG, { ...shared, uFocal: { value: focal / div }, uWorld: { value: 0.7 }, uMinPx: { value: 2 }, uCap: { value: 40 * sc + 6 }, uGlowMode: { value: 1 }, uGain: { value: 0.05 }, uStarDepth, uTauGain: { value: 0.08 } }, true);
+    const uForm = { value: 0 };
+    const clumpMat = mkMat(CLUMP_VERT, DISK_PT_FRAG, { uFocal: { value: focal }, uWorld: { value: 0.045 }, uMinPx: { value: Math.max(0.8, 1.1 * sc) }, uCap: { value: 12 * sc }, uForm, uGain: { value: 0.3 } });
+    const jetMat = pointsMaterial(JET_VERT, DISK_PT_FRAG, { uTime: shared.uTime, uFocal: { value: focal }, uJet: { value: 0 }, uMinPx: { value: Math.max(0.8, 1.1 * sc) } });
+    const pts = (g, m) => { const o = new THREE.Points(g, m); o.frustumCulled = false; return o; };
+    const disk = pts(geo.dg, diskMat), glow = pts(geo.gg, glowMat), clumps = pts(geo.cg, clumpMat), jets = pts(geo.jg, jetMat);
+    const stars = makeStarfield({ seed: 23, count: 14000, scale: sc, brightness: 0.8, band: { normal: [0.2, 0.3, 0.93], width: 0.1, frac: 0.4 } });
+
+    // the new star: one big sprite
+    const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+    const starMat = new THREE.ShaderMaterial({
+      uniforms: { uCore: { value: 1 }, uHalo: { value: 0.2 }, uSpike: { value: 0 }, uRed: { value: 1 }, uSize: { value: 760 * sc } },
+      vertexShader: `uniform float uSize; varying vec2 vUv; void main(){ gl_PointSize = uSize; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: STAR_FRAG.replace('varying vec2 vUv;', 'varying vec2 vUv_;').replace('void main(){', 'void main(){ vec2 vUv = vec2(gl_PointCoord.x, 1.0-gl_PointCoord.y);'),
+      blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
+    });
+    const star = pts(starGeo, starMat);
+
+    const backMat = new THREE.ShaderMaterial({
+      uniforms: { uInvVP: { value: new THREE.Matrix4() }, uCamPos: { value: new THREE.Vector3() }, uAmt: { value: 1 } },
+      vertexShader: `varying vec2 vNdc; void main(){ vNdc = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: simplex3 + /* glsl */`
+        uniform mat4 uInvVP; uniform vec3 uCamPos; uniform float uAmt; varying vec2 vNdc;
+        void main(){
+          vec4 w = uInvVP*vec4(vNdc, 1.0, 1.0); vec3 d = normalize(w.xyz/w.w - uCamPos);
+          float n = fbm3(d*2.0 + vec3(1.0, 4.0, 2.0));
+          float m = fbm3(d*3.5 + vec3(-2.0, 5.0, 1.0));
+          vec3 c = mix(vec3(0.55, 0.07, 0.18), vec3(0.06, 0.34, 0.4), smoothstep(-0.2, 0.3, m));
+          gl_FragColor = vec4(c*smoothstep(-0.05, 0.6, n)*0.05*uAmt + vec3(0.004, 0.003, 0.006), 0.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    });
+    const back = fsQuad(backMat);
+    const compMat = new THREE.ShaderMaterial({
+      uniforms: { tGlow: { value: glowRT.texture }, uTexel: { value: new THREE.Vector2(1 / gw, 1 / gh) } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tGlow; uniform vec2 uTexel; varying vec2 vUv;
+        void main(){
+          vec4 g = texture2D(tGlow, vUv)*0.4;
+          g += (texture2D(tGlow, vUv+vec2(uTexel.x,0.0)) + texture2D(tGlow, vUv-vec2(uTexel.x,0.0)) + texture2D(tGlow, vUv+vec2(0.0,uTexel.y)) + texture2D(tGlow, vUv-vec2(0.0,uTexel.y)))*0.15;
+          float T = exp(-max(g.a, 0.0));
+          gl_FragColor = vec4(max(g.rgb, 0.0)*(0.35 + 0.65*T), T);
+        }`,
+      depthTest: false, depthWrite: false, transparent: true,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
+    const comp = fsQuad(compMat);
+    const atomGeo = new THREE.BufferGeometry(); atomGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+    const atomMat = new THREE.ShaderMaterial({
+      uniforms: { uSize: { value: 22 * sc }, uI: { value: 1 } },
+      vertexShader: `uniform float uSize; void main(){ gl_PointSize = uSize; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `uniform float uI; void main(){ vec2 c = gl_PointCoord-0.5; float r2 = dot(c,c)*4.0; float a = exp(-r2*60.0)*4.0 + exp(-r2*9.0)*0.25; gl_FragColor = vec4(vec3(1.0,0.85,0.65)*a*uI, 1.0); }`,
+      blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
+    });
+    const atom = pts(atomGeo, atomMat);
+    const sceneBG = new THREE.Scene(); sceneBG.add(stars); sceneBG.add(star); sceneBG.add(jets);
+    const sceneFG = new THREE.Scene(); sceneFG.add(disk); sceneFG.add(clumps);
+    const sceneGlow = new THREE.Scene(); sceneGlow.add(glow);
+    const sceneTop = new THREE.Scene(); sceneTop.add(atom);
+    this.built.disk = { camera, glowRT, shared, uForm, uStarDepth, diskMat, glowMat, clumpMat, jetMat, starMat, stars, back, backMat, comp, sceneBG, sceneFG, sceneGlow, sceneTop, atomGeo, atomMat };
+    return this.built.disk;
+  }
+
   updateDisk(shot, t, T) {
-    const R = this._remnant();
-    return { scene: R.sceneFG, camera: R.camera, target: null, post: {} };
+    const D = this._disk();
+    const tc = clamp(t, -2, 17);
+    const cam = D.camera;
+    const c = DISK.cam(tc);
+    cam.position.set(...c.pos);
+    cam.up.set(0, 1, 0);
+    // keep the star a little right of centre
+    const right = new THREE.Vector3(-Math.sin(c.az), 0, Math.cos(c.az));
+    const look = new THREE.Vector3(0, 0, 0).addScaledVector(right, -0.0);
+    cam.lookAt(look);
+    cam.updateMatrixWorld();
+    const camRight = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    cam.lookAt(look.clone().addScaledVector(camRight, -2.2 * c.dist / 40));
+    cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    D.stars.position.copy(cam.position);
+    D.uStarDepth.value = cam.position.length();
+
+    const ign = DISK.IGN, dt = tc - ign;
+    const S = D.shared;
+    S.uTime.value = tc;
+    const on = smoothstep(-0.05, 0.12, dt);
+    S.uLight.value = on * (0.85 + 1.2 * Math.exp(-Math.max(dt, 0) * 1.8));
+    S.uFront.value = dt > 0 ? 16 * dt : -1;
+    S.uPre.value = lerp(0.12, 0.9, smoothstep(-1, 6.9, tc)) * (1 - 0.55 * on);
+    S.uGap.value = 0.85 * smoothstep(4, 14, tc);
+    S.uAmb.value = lerp(1.1, 0.07, smoothstep(0.5, 8, tc));
+    D.uForm.value = smoothstep(2.5, 14, tc);
+    D.jetMat.uniforms.uJet.value = smoothstep(0.5, 3.0, tc) * (1 - smoothstep(6.5, 9, tc));
+    const flashE = Math.exp(-Math.max(dt, 0) * 4.0);
+    const su = D.starMat.uniforms;
+    su.uRed.value = 1 - on;
+    su.uCore.value = lerp(1.0 + 1.5 * smoothstep(3, 6.9, tc), 30 + 60 * flashE, on);
+    su.uHalo.value = lerp(0.06 + 0.12 * smoothstep(3, 6.9, tc), 0.25 + 1.6 * flashE, on);
+    su.uSpike.value = on * (0.5 + 1.5 * flashE);
+    // pre-ignition flicker (T Tauri accretion)
+    if (on < 1) su.uCore.value *= 1 + 0.25 * Math.sin(tc * 7.3) * Math.sin(tc * 3.1);
+
+    const ivp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+    D.backMat.uniforms.uInvVP.value.copy(ivp); D.backMat.uniforms.uCamPos.value.copy(cam.position);
+    D.backMat.uniforms.uAmt.value = lerp(1.0, 0.45, smoothstep(5, 12, tc));
+
+    const a = DISK.atom(tc);
+    const atomPos = new THREE.Vector3(...a);
+    D.atomGeo.attributes.position.array.set(a); D.atomGeo.attributes.position.needsUpdate = true;
+
+    const render = (renderer, target) => {
+      const ac = renderer.autoClear; renderer.autoClear = false;
+      renderer.setRenderTarget(D.glowRT); renderer.setClearColor(0x000000, 0); renderer.clear();
+      renderer.render(D.back.scene, D.back.cam);
+      renderer.render(D.sceneGlow, cam);
+      renderer.setRenderTarget(target); renderer.setClearColor(0x000000, 1);
+      renderer.render(D.sceneBG, cam);
+      renderer.render(D.comp.scene, D.comp.cam);
+      renderer.render(D.sceneFG, cam);
+      renderer.render(D.sceneTop, cam);
+      renderer.autoClear = ac;
+    };
+    const fl = dt > 0 ? 1.6 * Math.exp(-dt * 13.0) * smoothstep(0, 0.04, dt) : 0;
+    return {
+      scene: D.sceneFG, camera: cam, render, target: atomPos,
+      post: {
+        exposure: lerp(1.0, 0.85, on), flash: fl,
+        bloomStrength: 0.8 + 0.9 * on * flashE, bloomThreshold: 0.7, bloomKnee: 0.6, bloomRadius: 0.9,
+        streak: 0.06 + on * (0.12 + 0.45 * flashE * flashE), streakTint: [1.0, 0.78, 0.5],
+        ca: 0.002, vignette: 0.45, grain: 0.045,
+        saturation: 1.12, contrast: 1.05, tint: [1.0 + 0.04 * on, 0.98, 1.0 - 0.06 * on], lift: [0.002, 0.0015, 0.003],
+      },
+    };
   }
 
   dispose() {
     for (const k of Object.keys(this.built)) {
       const B = this.built[k];
-      B.glowRT?.dispose();
-      for (const sc of [B.sceneFG, B.sceneGlow, B.sceneAtom, B.scene]) sc?.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+      B.glowRT?.dispose(); B.backMat?.dispose(); B.compMat?.dispose(); B.comp?.quad.material.dispose(); B.back?.quad.material.dispose();
+      for (const sc of [B.sceneBG, B.sceneFG, B.sceneSheets, B.sceneGlow, B.sceneAtom, B.sceneTop]) sc?.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
     }
     this.strandRT?.dispose(); this.strandRT = null;
     this.built = {};

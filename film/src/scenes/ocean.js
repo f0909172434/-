@@ -109,8 +109,8 @@ vec3 skyBase(vec3 d){
   float e = max(d.y, 0.0);
   float sd = max(dot(d, uSun), 0.0);
   float az = 0.5 + 0.5 * dot(normalize(d.xz + vec2(1e-5)), normalize(uSun.xz));
-  vec3 hor = mix(vec3(0.50, 0.33, 0.36), vec3(1.30, 0.56, 0.22), pow(az, 2.0));
-  vec3 mid = mix(vec3(0.20, 0.17, 0.26), vec3(0.48, 0.30, 0.30), pow(az, 3.0));
+  vec3 hor = mix(vec3(0.42, 0.33, 0.34), vec3(1.30, 0.58, 0.22), pow(az, 2.0));
+  vec3 mid = mix(vec3(0.15, 0.16, 0.26), vec3(0.52, 0.33, 0.24), pow(az, 3.0));
   vec3 zen = vec3(0.045, 0.07, 0.16);
   vec3 c = mix(hor, mid, smoothstep(0.0, 0.13, e));
   c = mix(c, zen, smoothstep(0.08, 0.65, e));
@@ -166,10 +166,13 @@ vec3 waterCol(vec3 d){
   float s = max(dot(d, uSunW), 0.0);
   c += vec3(0.20, 0.55, 0.45) * pow(s, 5.0) * 0.55 + vec3(0.6, 0.95, 0.75) * pow(s, 40.0) * 0.5;
   c *= exp(-uDepthCam * vec3(0.20, 0.075, 0.050));
+  c *= 1.0 + 1.6 * exp(-uDepthCam * 1.2) * (1.0 - 0.5 * max(up, 0.0));
   return c;
 }
 // signed height of a point relative to the surface (>0 above)
 float above(vec3 p){ return p.y - waveH(p.xz, uWTime); }
+// medium test for the dome port; skips the wave inversion when the camera is clearly above/below
+float portAbove(vec3 p){ return abs(uMedium) > 0.5 ? uMedium : above(p); }
 `;
 
 const QUAD_VERT = /* glsl */`
@@ -207,7 +210,7 @@ export default class Ocean {
       uNoise: { value: this.noise },
       uRight: { value: new THREE.Vector3() }, uUp: { value: new THREE.Vector3() }, uFwd: { value: new THREE.Vector3() },
       uTan: { value: new THREE.Vector2() }, uYaw: { value: 0 },
-      uFocus: { value: 4 }, uCoc: { value: 1 }, uRes: { value: new THREE.Vector2(ctx.width, ctx.height) },
+      uFocus: { value: 4 }, uCellL: { value: new THREE.Vector4() }, uCoc: { value: 1 }, uRes: { value: new THREE.Vector2(ctx.width, ctx.height) },
     };
     const U = this.U;
 
@@ -218,7 +221,7 @@ export default class Ocean {
       void main(){
         vec3 d = viewRay();
         vec3 P = uCamPos + d * uPort;
-        float a = above(P);
+        float a = portAbove(P);
         vec3 c = a > 0.0 ? skyCol(d, 1.0) : waterCol(d);
         gl_FragColor = vec4(c, 1.0);
       }` }));
@@ -258,7 +261,7 @@ export default class Ocean {
         }`,
         fragmentShader: COMMON + /* glsl */`
         varying vec2 vX0; varying vec3 vW;
-        vec3 ripples(vec2 x, float t, float fade){
+        vec3 ripples(vec2 x, float t, float fade, float near){
           // small capillary/chop detail as summed sine slopes (cheap)
           vec2 g = vec2(0.0);
           g += 0.030 * vec2(0.80, 0.60) * cos(dot(x, vec2(0.80, 0.60)) * 7.3 - t * 6.0);
@@ -268,6 +271,11 @@ export default class Ocean {
           vec4 n2_ = texture2D(uNoise, x * 0.19 - vec2(0.0, t * 0.03));
           vec4 n3 = texture2D(uNoise, x * 0.47 + vec2(t * 0.05, t * 0.02));
           g += (n1.gb - 0.5) * 0.20 + (n2_.ab - 0.5) * 0.16 + (n3.rg - 0.5) * 0.12;
+          if (near > 0.0) {
+            vec4 n4 = texture2D(uNoise, x * 1.31 + vec2(t * 0.09, -t * 0.04));
+            vec4 n5 = texture2D(uNoise, x * 3.07 - vec2(t * 0.13, t * 0.07));
+            g += ((n4.ba - 0.5) * 0.14 + (n5.gr - 0.5) * 0.10) * near;
+          }
           return vec3(-g.x, 0.0, -g.y) * fade;
         }
         void main(){
@@ -275,7 +283,7 @@ export default class Ocean {
           if (dist < uPort) discard;
           vec3 v = toCam / dist;
           float fade = 1.0 - smoothstep(6.0, 140.0, dist);
-          vec3 n = normalize(gerstnerN(vX0, uWTime) + ripples(vX0, uWTime, fade));
+          vec3 n = normalize(gerstnerN(vX0, uWTime) + ripples(vX0, uWTime, fade, 1.0 - smoothstep(3.0, 30.0, dist)));
           vec3 c;
           bool fromAbove = uMedium > 0.5 ? true : (uMedium < -0.5 ? false : (dist < 3.0 ? gl_FrontFacing : above(uCamPos - v * uPort) > 0.0));
           if (fromAbove) {
@@ -283,7 +291,7 @@ export default class Ocean {
             float nv = max(dot(n, v), 0.02);
             float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
             vec3 r = reflect(-v, n); r.y = abs(r.y) + 0.002;
-            vec3 refl = min(skyCol(r, 0.0), vec3(6.0));
+            vec3 refl = min(skyCol(r, 0.0), vec3(6.0)) * 0.85;
             vec3 deep = vec3(0.003, 0.030, 0.040) + vec3(0.006, 0.040, 0.050) * max(n.y, 0.0);
             // light through the backlit swells (emerald subsurface glow)
             float back = pow(max(dot(-v.xz, normalize(uSun.xz)), 0.0), 4.0);
@@ -299,10 +307,10 @@ export default class Ocean {
             float t2 = (1.0 - nh * nh) / (nh * nh);
             float D = exp(-t2 / m2) / (3.14159 * m2 * nh * nh * nh * nh);
             float fvh = 0.02 + 0.98 * pow(1.0 - max(dot(v, hv), 0.0), 5.0);
-            float spark = texture2D(uNoise, vX0 * 2.1 + vec2(uWTime * 0.21, -uWTime * 0.13)).a * texture2D(uNoise, vX0 * 3.3 - vec2(uWTime * 0.17, uWTime * 0.11)).b;
+            float spark = texture2D(uNoise, vX0 * 5.3 + vec2(uWTime * 0.21, -uWTime * 0.13)).a * texture2D(uNoise, vX0 * 8.1 - vec2(uWTime * 0.17, uWTime * 0.11)).b;
             spark = mix(smoothstep(0.30, 0.52, spark) * 3.0 + 0.15, 1.0, far);
             float glit = D * fvh / (4.0 * nv) * spark;
-            c += vec3(5.0, 2.9, 1.3) * glit * 0.22;
+            c += vec3(5.0, 2.9, 1.3) * glit * 0.14;
             // aerial perspective
             vec3 hd = normalize(vec3(-v.x, 0.0, -v.z));
             float fog = 1.0 - exp(-dist * 0.0022);
@@ -350,10 +358,10 @@ export default class Ocean {
         void main(){
           vec3 d = viewRay();
           vec3 S = uCamPos + d * uPort;
-          if (above(S) > 0.0) { gl_FragColor = vec4(0.0); return; }
+          if (portAbove(S) > 0.0) { gl_FragColor = vec4(0.0); return; }
           float tmax = 34.0;
           if (d.y > 0.0) tmax = min(tmax, max(-S.y, 0.0) / d.y);
-          const int N = 22;
+          const int N = 14;
           float dt = tmax / float(N);
           float j = hash12(gl_FragCoord.xy + fract(uTime * 7.31) * 91.0);
           float acc = 0.0;
@@ -369,6 +377,7 @@ export default class Ocean {
           gl_FragColor = vec4(col, 1.0);
         }` });
       const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); q.frustumCulled = false; q.renderOrder = 20;
+      this.godrays = q;
       this.scene.add(q);
     }
 
@@ -383,7 +392,7 @@ export default class Ocean {
       const m = new THREE.ShaderMaterial({
         uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
         vertexShader: COMMON + /* glsl */`
-        attribute float aSeed; uniform float uFocus, uCoc;
+        attribute float aSeed; uniform float uFocus, uCoc; uniform vec4 uCellL;
         varying float vA; varying vec3 vC; varying float vSharp;
         void main(){
           vec3 box = vec3(26.0, 18.0, 26.0);
@@ -406,6 +415,8 @@ export default class Ocean {
           vA *= 0.9 + 0.6 * aSeed;
           vSharp = clamp(sz / max(base, 1.0) / 6.0, 0.0, 1.0);
           vC = mix(vec3(0.55, 0.85, 0.80), vec3(0.95, 1.0, 0.9), aSeed) * lit * 1.6;
+          vec3 dc = w - uCellL.xyz;
+          vC += vec3(0.15, 1.0, 1.2) * uCellL.w * 0.5 / (0.15 + dot(dc, dc));
         }`,
         fragmentShader: /* glsl */`
         varying float vA; varying vec3 vC; varying float vSharp;
@@ -449,14 +460,14 @@ export default class Ocean {
         varying float vA, vSharp;
         void main(){
           float age = uTime - aB.x;
-          float rad = 0.004 + 0.03 * aB.z;
+          float rad = 0.003 + 0.017 * aB.z;
           float rise = (0.35 + 6.0 * rad) * age + 0.4 * age * age * (0.5 + aB.y);
           vec3 w = position + vec3(sin(age * 9.0 + aB.w * 30.0) * 0.03, rise, cos(age * 7.0 + aB.w * 20.0) * 0.03);
           vec4 mv = viewMatrix * vec4(w, 1.0); float z = -mv.z;
           gl_Position = projectionMatrix * mv;
           float px = rad / max(z, 0.05) / uTanY * (0.5 * uResY);
           float coc = abs(1.0 / max(z, 0.05) - 1.0 / uFocus) * uCoc * uScale;
-          float sz = max(px * 2.0, max(coc, 1.5 * uScale));
+          float sz = max(px * 2.0 + coc * 0.8, 1.5 * uScale);
           gl_PointSize = min(sz, 120.0 * uScale);
           vSharp = clamp(px * 2.0 / sz, 0.0, 1.0);
           vA = step(0.0, age) * (1.0 - smoothstep(1.2, 2.4, age)) * step(0.0, -above(w)) * smoothstep(0.2, 0.5, z)
@@ -467,12 +478,12 @@ export default class Ocean {
         void main(){
           vec2 c = gl_PointCoord - 0.5; float r = length(c) * 2.0;
           if (r > 1.0 || vA < 0.002) discard;
-          float rim = smoothstep(0.62, 0.9, r) * smoothstep(1.0, 0.92, r);
+          float rim = smoothstep(0.74, 0.93, r) * smoothstep(1.0, 0.95, r);
           float spec = exp(-dot(c - vec2(-0.16, 0.18), c - vec2(-0.16, 0.18)) * 160.0);
-          float sharp = rim * 0.8 + spec * 2.5 + 0.05;
+          float sharp = rim * 0.75 + spec * 1.6 + 0.04 + 0.08 * smoothstep(0.5, 0.9, r);
           float soft = smoothstep(1.0, 0.7, r) * 0.25;
           float a = mix(soft, sharp, vSharp);
-          gl_FragColor = vec4(vec3(0.75, 0.95, 1.0) * a * vA * 1.4, 1.0);
+          gl_FragColor = vec4(vec3(0.75, 0.95, 1.0) * a * vA * 1.05, 1.0);
         }` });
       m.uniforms.uTanY = { value: Math.tan(21 * Math.PI / 180) };
       m.uniforms.uResY = { value: ctx.height };
@@ -485,7 +496,7 @@ export default class Ocean {
     {
       this.cellU = {
         uC: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
-        uK: { value: new THREE.Vector3() }, uCtr: { value: new THREE.Vector3() }, uBR: { value: 1 },
+        uK: { value: new THREE.Vector3() }, uCtr: { value: new THREE.Vector3() }, uBR: { value: 1 }, uBR2: { value: 1 },
         uCellA: { value: 0 }, uNucA: { value: [0, 0, 0, 0] }, uNuc: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
       };
       const m = new THREE.ShaderMaterial({
@@ -495,7 +506,7 @@ export default class Ocean {
         varying vec3 vW;
         void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
         fragmentShader: COMMON + /* glsl */`
-        uniform vec4 uC[4]; uniform vec4 uNuc[4]; uniform vec3 uK; uniform vec3 uCtr; uniform float uBR, uCellA;
+        uniform vec4 uC[4]; uniform vec4 uNuc[4]; uniform vec3 uK; uniform vec3 uCtr; uniform float uBR, uBR2, uCellA;
         varying vec3 vW;
         float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
         float sdf(vec3 p){
@@ -503,7 +514,7 @@ export default class Ocean {
           float b = smin(length(p - uC[2].xyz) - uC[2].w, length(p - uC[3].xyz) - uC[3].w, uK.y);
           float d = smin(a, b, uK.z);
           // gentle membrane undulation
-          d += 0.012 * sin(p.x * 23.0 + uTime * 1.7) * sin(p.y * 19.0 - uTime * 1.3) * sin(p.z * 21.0 + uTime);
+          d += 0.007 * sin(p.x * 11.0 + uTime * 1.7) * sin(p.y * 9.0 - uTime * 1.3) * sin(p.z * 10.0 + uTime) + 0.003 * sin(p.x * 31.0 + p.z * 27.0 - uTime * 2.0);
           return d;
         }
         vec3 sdfN(vec3 p){
@@ -528,9 +539,12 @@ export default class Ocean {
           vec3 ro = uCamPos; vec3 rd = normalize(vW - uCamPos);
           vec3 oc = ro - uCtr; float b = dot(oc, rd); float c = dot(oc, oc) - uBR * uBR;
           float h = b * b - c; if (h < 0.0) discard;
-          h = sqrt(h); float t0 = max(-b - h, 0.0), t1 = -b + h;
+          float ct = dot(oc, oc) - uBR2 * uBR2; float h2 = b * b - ct;
+          float t0 = 0.0, t1 = -1.0;
+          if (h2 > 0.0) { h2 = sqrt(h2); t0 = max(-b - h2, 0.0); t1 = -b + h2; }
           float t = t0; bool hit = false; float dmin = 1e9;
-          for (int i = 0; i < 48; i++) {
+          for (int i = 0; i < 30; i++) {
+            if (t1 < 0.0) break;
             float d = sdf(ro + rd * t);
             dmin = min(dmin, d);
             if (d < 0.002) { hit = true; break; }
@@ -538,21 +552,22 @@ export default class Ocean {
           }
           vec3 col = vec3(0.0); float alpha = 0.0;
           // soft corona just outside the membrane
-          col += vec3(0.05, 0.45, 0.55) * exp(-max(dmin, 0.0) * 14.0) * 0.18;
+          if (t1 > 0.0) col += vec3(0.05, 0.45, 0.55) * exp(-max(dmin, 0.0) * 14.0) * 0.18;
           if (hit) {
             vec3 p = ro + rd * t;
             vec3 n = sdfN(p);
             float nv = abs(dot(n, rd));
             float fr = pow(1.0 - nv, 3.0);
             // membrane: luminous rim, a second inner membrane line, faint sheen from the sun shafts above
-            col += vec3(0.25, 1.6, 2.0) * (0.015 + 2.6 * pow(1.0 - nv, 5.0) + 0.12 * pow(1.0 - nv, 2.0));
+            col += vec3(0.25, 1.6, 2.0) * (0.01 + 3.4 * pow(1.0 - nv, 6.0) + 0.10 * pow(1.0 - nv, 2.0));
             col += vec3(0.6, 1.0, 0.9) * pow(max(dot(reflect(rd, n), uSunW), 0.0), 24.0) * 0.35;
             col += vec3(0.20, 0.9, 1.0) * max(n.y, 0.0) * 0.06;
             // interior march: faint cytoplasm, organelle specks, glowing nucleus
             vec3 glow = vec3(0.0);
-            float dt = 0.04;
-            for (int i = 0; i < 26; i++) {
-              vec3 q = p + rd * (float(i) + 0.5) * dt;
+            float dt = 0.065;
+            float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            for (int i = 0; i < 13; i++) {
+              vec3 q = p + rd * (float(i) + jit) * dt;
               float sd = sdf(q);
               if (sd > 0.005) break;
               float inside = clamp(-sd / 0.12, 0.0, 1.0);
@@ -560,12 +575,23 @@ export default class Ocean {
               float nuc = nucleus(q);
               // inner membrane shell
               float shell = exp(-pow((sd + 0.05) / 0.012, 2.0));
-              glow += (vec3(0.002, 0.03, 0.045) * inside + vec3(0.45, 1.9, 1.7) * org * inside + vec3(0.08, 0.42, 0.50) * shell
+              glow += (vec3(0.002, 0.03, 0.045) * inside + vec3(0.6, 2.6, 2.2) * org * inside + vec3(0.08, 0.42, 0.50) * shell
                      + vec3(1.3, 3.2, 2.6) * smoothstep(0.3, 1.0, nuc) + vec3(0.04, 0.32, 0.30) * nuc) * dt;
             }
             col += glow * 3.0;
-            alpha = 0.6 + 0.3 * fr;
+            alpha = 0.4 + 0.4 * fr;
           }
+          // in-water glow: analytic single scattering from each cell treated as a point light
+          vec3 halo = vec3(0.0);
+          for (int i = 0; i < 4; i++) {
+            vec3 cc = uC[i].xyz - ro; float tc = dot(cc, rd); float hh = max(length(cc - rd * tc), 0.02);
+            float I = exp(-hh * 2.2) * step(0.0, tc);
+            float edge = 1.0 - smoothstep(0.5, 1.0, hh / uBR);
+            float wgt = (i == 0 || uC[i].xyz != uC[i - (i > 0 ? 1 : 0)].xyz) ? 1.0 : 0.0;
+            halo += vec3(0.04, 0.32, 0.40) * I * edge * wgt * uC[i].w;
+          }
+          col += halo * 0.45 * (hit ? 0.0 : 1.0);
+          alpha = max(alpha, 0.0);
           // underwater fog
           float dist = length(uCtr - uCamPos);
           float fog = exp(-max(dist - 1.0, 0.0) / 9.0);
@@ -640,7 +666,7 @@ export default class Ocean {
     const z = t < 7 ? -1.15 * t : -8.05 - 4.5 * (1 - Math.exp(-(t - 7) / 3.5)) - 0.35 * (t - 7);
     const h = waveHJS(x, z, wt);
     // height relative to the local surface: ride the swell, settle at the surface, slip under, descend
-    const rideAbove = 1.05 + 0.22 * Math.sin(t * 0.9);
+    const rideAbove = 1.22 + 0.15 * Math.sin(t * 0.9);
     const k1 = smoothstep(4.2, 5.7, t); // drop to the surface
     const k2 = smoothstep(5.95, 7.0, t); // slip under
     const rel = lerp(lerp(rideAbove, 0.12, k1), -1.5, k2);
@@ -704,7 +730,7 @@ export default class Ocean {
     const nloc = [NA.clone().addScaledVector(ax2a, nA), NA.clone().addScaledVector(ax2a, -nA), NB.clone().addScaledVector(ax2b, nB), NB.clone().addScaledVector(ax2b, -nB)];
     // nucleus dims while dividing (envelope breaks down), returns when the daughters close
     const dim = (s) => 1 - 0.3 * Math.sin(Math.PI * clamp(s));
-    const nuc = nloc.map((v, i) => ({ p: v.applyEuler(rot).add(ctr), w: lerp(0.15, 0.12, s1) * lerp(1, 0.86, i < 2 ? s2a : s2b),
+    const nuc = nloc.map((v, i) => ({ p: v.applyEuler(rot).add(ctr), w: lerp(0.12, 0.095, s1) * lerp(1, 0.86, i < 2 ? s2a : s2b),
       a: dim(s1) * dim(i < 2 ? s2a : s2b) * (i === 0 || (i === 1 && s2a > 0) || (i === 2 && s1 > 0) || (i === 3 && s2b > 0) ? 1 : 0) }));
     return { ctr, c, sizes, k: [kA, kB, kC], nuc, A: c[0] };
   }
@@ -725,7 +751,9 @@ export default class Ocean {
     this.bubbleMat.uniforms.uTanY.value = ty;
     U.uDepthCam.value = Math.max(0, -(cs.pos.y - cs.h));
     const relH = cs.pos.y - cs.h;
-    U.uMedium.value = relH > 1.4 ? 1 : (relH < -1.4 ? -1 : 0);
+    U.uMedium.value = relH > 0.95 ? 1 : (relH < -1.4 ? -1 : 0);
+    this.meniscus.visible = U.uMedium.value === 0;
+    this.godrays.visible = U.uMedium.value < 0.5;
 
     // cells
     const cl = this.cellState(t);
@@ -738,8 +766,10 @@ export default class Ocean {
     this.cellU.uCtr.value.copy(cl.ctr);
     const br = 2.2;
     this.cellU.uBR.value = br;
+    this.cellU.uBR2.value = 1.3;
     this.cellMesh.position.copy(cl.ctr); this.cellMesh.scale.setScalar(br * 1.08); this.cellMesh.updateMatrixWorld();
     this.cellU.uCellA.value = smoothstep(8.6, 10.6, t);
+    U.uCellL.value.set(cl.ctr.x, cl.ctr.y, cl.ctr.z, this.cellU.uCellA.value);
     this.cellMesh.visible = t > 8.0;
 
     // focus: near particles early, then rack to the cell
@@ -754,7 +784,7 @@ export default class Ocean {
       bloomStrength: lerp(0.65, 0.7, uw), bloomThreshold: lerp(1.6, 1.15, uw), bloomKnee: 0.7, bloomRadius: 0.85,
       streak: lerp(0.28, 0.12, uw), streakTint: [lerp(1.0, 0.4, uw), lerp(0.66, 0.9, uw), lerp(0.38, 1.0, uw)],
       ca: 0.0022, vignette: lerp(0.38, 0.5, uw), grain: 0.05,
-      saturation: lerp(1.08, 1.12, uw), contrast: lerp(1.06, 1.04, uw),
+      saturation: lerp(1.1, 1.12, uw), contrast: lerp(1.12, 1.05, uw),
       tint: [lerp(1.05, 0.92, uw), lerp(0.99, 1.02, uw), lerp(0.92, 1.06, uw)],
       lift: [0.0, lerp(0.0, 0.004, uw), lerp(0.0, 0.008, uw)],
     };

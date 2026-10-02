@@ -98,15 +98,22 @@ def onepole(x, tau):
     return y
 
 
-def smooth_random(n, rate, r, lo=-1.0, hi=1.0):
-    """Smooth random curve (control points every 1/rate s, cosine interp)."""
+def smooth_random(n, rate, r, lo=-1.0, hi=1.0, decim=1):
+    """Smooth random curve (control points every 1/rate s, cosine interp).
+    Computed at a control rate (every 64 samples) and linearly upsampled.
+    With decim > 1 the curve is returned at that decimation (len ceil(n/decim))."""
     npts = int(n / SR * rate) + 3
     pts = r.uniform(lo, hi, npts)
-    x = tvec(n) * rate
-    i = np.floor(x).astype(int)
+    step = 64 if decim == 1 else decim
+    m = (n + step - 1) // step + 1
+    x = np.arange(m) * (step * rate / SR)
+    i = np.minimum(np.floor(x).astype(int), npts - 2)
     f = x - i
-    f = 0.5 - 0.5 * np.cos(np.pi * f)
-    return pts[i] * (1 - f) + pts[i + 1] * f
+    f = 0.5 - 0.5 * np.cos(np.pi * np.clip(f, 0, 1))
+    y = pts[i] * (1 - f) + pts[i + 1] * f
+    if decim > 1:
+        return y[:(n + decim - 1) // decim]
+    return np.interp(np.arange(n, dtype=np.float64), np.arange(m) * float(step), y)
 
 
 # ----------------------------------------------------------------------------
@@ -415,16 +422,29 @@ def short_term_lufs(x, win=3.0, hop=0.5):
     return (starts + ns(win) / 2) / SR, -0.691 + 10 * np.log10(ms + 1e-20)
 
 
+def os_peak(x, factor=4, chunk=SR * 10, pad=256):
+    """Per-sample envelope of the 4x-oversampled |x| (max over channels), chunked."""
+    x = np.atleast_2d(x)
+    n = x.shape[-1]
+    out = np.zeros(n)
+    for a in range(0, n, chunk):
+        b = min(n, a + chunk)
+        lo, hi = max(0, a - pad), min(n, b + pad)
+        up = signal.resample_poly(x[:, lo:hi].astype(np.float64), factor, 1, axis=-1)
+        pk = np.max(np.abs(up), axis=0)
+        pk = pk[: (hi - lo) * factor].reshape(-1, factor).max(axis=1)
+        out[a:b] = np.maximum(pk[a - lo:a - lo + (b - a)], np.max(np.abs(x[:, a:b]), axis=0))
+    return out
+
+
 def true_peak(x):
-    up = signal.resample_poly(x, 4, 1, axis=-1)
-    return float(np.max(np.abs(up)))
+    return float(np.max(os_peak(x)))
 
 
 def limiter(x, ceiling_db=-1.2, look=0.004, release=0.08):
     """Look-ahead brick-wall limiter with smooth gain (no overshoot)."""
     thr = undb(ceiling_db)
-    up = signal.resample_poly(x, 4, 1, axis=-1)
-    pk = np.max(np.abs(up), axis=0).reshape(-1, 4).max(axis=1)[:x.shape[-1]]
+    pk = os_peak(x)
     g = np.minimum(1.0, thr / np.maximum(pk, 1e-9))
     L = max(3, ns(look))
     g1 = minimum_filter1d(g, size=2 * L + 1, mode='nearest')
@@ -450,3 +470,9 @@ def compressor(x, thr_db=-18.0, ratio=2.0, win=0.05, smooth=0.25, knee=6.0):
     gr = maximum_filter1d(gr, size=S, mode='nearest')
     gr = uniform_filter1d(gr, size=S, mode='nearest')
     return x * undb(-gr)[None, :], gr
+
+
+def balance(st, p):
+    """Constant-power balance/pan of an already-stereo signal."""
+    a = (float(np.clip(p, -1, 1)) + 1.0) * np.pi / 4.0
+    return st * np.array([[np.cos(a)], [np.sin(a)]]) * np.sqrt(2.0)

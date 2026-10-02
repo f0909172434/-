@@ -91,19 +91,19 @@ float field(vec2 p){
   // p.x in [-0.5,0.5], p.y in [0,1] (1 = top). Signed distance-ish: >0 inside.
   float y = p.y;
   float x = p.x - uLean*y*y - 0.025*sin(y*6.0 + uSeed);
-  float yh = 0.80;
+  float yh = 0.72;
   float w = mix(0.27, 0.085, pow(clamp(y/yh, 0.0, 1.0), 0.75));
-  w -= uNeck*exp(-pow((y-0.70)/0.05, 2.0));
+  w -= uNeck*exp(-pow((y-0.62)/0.05, 2.0));
   float dT = min(w - abs(x), yh + 0.02 - y);
-  float rh = 0.085 + uHead;
+  float rh = 0.07 + uHead;
   float dH = rh - length(vec2(x*1.1, (y - yh)*0.9));
   float d = max(dT, dH);
   // finger-like protrusions (EGGs) near the top, ragged edges everywhere
-  float n = fbm3(vec3(p*vec2(4.0, 2.6), uSeed)) * 0.075 + fbm3(vec3(p*vec2(14.0, 9.0), uSeed+5.0))*0.022;
-  float fing = smoothstep(0.55, 0.95, y) * max(0.0, snoise(vec3(p.x*18.0, p.y*5.0, uSeed+9.0))) * 0.035;
-  return d + n + fing;
+  float n = fbm3(vec3(p*vec2(4.0, 2.6), uSeed)) * 0.075 + fbm3(vec3(p*vec2(14.0, 9.0), uSeed+5.0))*0.008;
+  float fing = smoothstep(0.5, 0.85, y) * max(0.0, snoise(vec3(p.x*14.0, p.y*4.0, uSeed+9.0))) * 0.02;
+  return min(d + n + fing, (0.985 - y)*0.6);
 }
-float surf(vec2 p){ return fbm3(vec3(p*vec2(7.0, 5.0), uSeed+21.0)) + 0.35*fbm3(vec3(p*vec2(20.0, 14.0), uSeed+33.0)); }
+float surf(vec2 p){ return fbm3(vec3(p*vec2(3.5, 2.4), uSeed+21.0)) + 0.22*fbm3(vec3(p*vec2(11.0, 7.0), uSeed+33.0)); }
 void main(){
   vec2 p = vec2(vUv.x - 0.5, vUv.y);
   float e = 0.004;
@@ -119,22 +119,23 @@ void main(){
   float thick = smoothstep(0.0, 0.10, d);
   // bumpy cloud relief lit from the top/front
   float h0 = surf(p), hx = surf(p + vec2(0.003, 0.0)), hy = surf(p + vec2(0.0, 0.003));
-  vec3 nrm = normalize(vec3(-(hx-h0)*1.6, -(hy-h0)*1.6, 0.012*1.0));
+  float hn = clamp(0.5 + 0.6*h0, 0.0, 1.0);
+  vec3 nrm = normalize(vec3(-(hx-h0)*1.0, -(hy-h0)*1.0, 0.03));
   nrm = normalize(nrm + vec3(-g*0.8*(1.0-thick), 0.0));
   float lam = clamp(dot(nrm, normalize(vec3(0.25, 0.9, 0.45))), 0.0, 1.0);
   float height = smoothstep(0.0, 0.95, p.y);
-  float lit = (0.15 + 0.85*lam) * mix(0.25, 1.0, height) * mix(1.0, 0.55, thick);
+  float lit = (0.35 + 0.65*lam) * mix(0.22, 1.0, height) * mix(1.0, 0.5, thick);
   vec3 dark = vec3(0.020, 0.010, 0.007);
-  vec3 amber = vec3(0.42, 0.20, 0.085);
-  vec3 body = mix(dark, amber, lit) * (0.75 + 0.5*h0);
+  vec3 amber = vec3(0.30, 0.16, 0.08);
+  vec3 body = mix(dark, amber, lit * (1.0 - 0.55*thick)) * (0.65 + 0.5*hn);
   // rim: ionisation front on the light-facing silhouette, hottest at the head
-  vec3 rimc = mix(vec3(1.3, 0.62, 0.26), vec3(2.6, 1.55, 0.95), smoothstep(0.55, 0.95, p.y));
-  float rim = edge * (0.05 + 1.2*pow(facing, 1.5)) * (0.25 + 0.75*height) * (0.6 + 0.6*h0);
+  vec3 rimc = mix(vec3(1.05, 0.58, 0.30), vec3(2.4, 1.6, 1.05), smoothstep(0.5, 0.9, p.y));
+  float rim = edge * (0.02 + 1.0*pow(facing, 2.5)) * (0.2 + 0.8*height*height) * (0.65 + 0.5*hn);
   vec3 col = body + rimc * rim;
-  float ha = halo * 0.5 * (0.5 + 0.5*h0);
-  vec3 hc = mix(vec3(0.50, 0.28, 0.12), vec3(1.0, 0.70, 0.42), height) * ha * (0.3 + 0.9*facing);
-  float A = clamp(a + ha*0.55, 0.0, 1.0);
-  gl_FragColor = vec4(col*a + hc, A);
+  float ha = halo * 0.30;
+  vec3 hc = mix(vec3(0.30, 0.15, 0.07), vec3(0.9, 0.62, 0.38), height*height) * ha * (0.2 + 1.0*facing);
+  float A = clamp(a + ha*0.35, 0.0, 1.0);
+  gl_FragColor = vec4(max(col*a + hc, vec3(0.0)), A);
 }`;
 
 // Ionised gas backdrop for the nursery: RGB HDR emission (soft, large-scale).
@@ -150,9 +151,14 @@ void main(){
   vec3 teal = vec3(0.12, 0.62, 0.72);
   vec3 blue = vec3(0.05, 0.13, 0.36);
   float m = smoothstep(-0.35, 0.55, a + 0.25*c);
-  vec3 col = mix(blue, teal, m*topLit) * (0.10 + 0.40*m) * (0.35 + 1.3*topLit*topLit);
+  vec3 col = mix(blue, teal, m*topLit) * (0.04 + 0.55*m*m) * (0.25 + 1.4*topLit*topLit);
   col += vec3(0.75, 0.42, 0.20) * pow(b, 5.0) * 0.30 * (1.0 - 0.6*topLit);
+  // dark dust clouds breaking up the glow
+  float dd = fbm3(vec3(p*1.5 + w*0.9, 23.0));
+  col *= mix(0.18, 1.0, smoothstep(-0.45, 0.25, dd + 0.35*topLit));
   col += vec3(0.55, 0.85, 1.0) * pow(smoothstep(0.6, 1.0, vUv.y), 2.0) * 0.30 * (0.6 + 0.6*m);
+  vec2 bc = (vUv - vec2(0.48, 0.62)) * vec2(2.4, 1.0);
+  col += vec3(0.20, 0.55, 0.65) * exp(-dot(bc, bc)*4.0) * (0.25 + 0.9*m*m);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -306,7 +312,7 @@ varying vec2 vUv; varying float vI; varying float vKind; varying float vSeed;
 float spike(vec2 p, float ang, float w){
   vec2 d = vec2(cos(ang), sin(ang));
   float along = abs(dot(p, d)), perp = abs(dot(p, vec2(-d.y, d.x)));
-  return exp(-perp/w) * exp(-along*4.0) ;
+  return exp(-perp/w) * exp(-along*2.6) ;
 }
 void main(){
   vec2 p = vUv; float r = length(p);
@@ -332,11 +338,11 @@ varying vec2 vUv; varying float vDist;
 void main(){
   vec4 c = texture2D(tMap, vUv);
   float h = uHaze;
-  vec3 col = c.rgb * uGain * (1.0 - h) + uHazeCol * c.a * h;
-  gl_FragColor = vec4(col, c.a * (1.0 - 0.5*h));
+  vec3 col = c.rgb * uGain * mix(1.0, 0.5, h) + uHazeCol * c.a * h;
+  gl_FragColor = vec4(col, c.a * (1.0 - 0.35*h));
 }`;
 const GAS_FRAG = /* glsl */`
-uniform sampler2D tMap, tDetail; uniform float uGain, uTime, uAlpha; uniform vec2 uOff, uRep;
+uniform sampler2D tMap, tDetail; uniform float uGain, uTime, uAlpha, uPremul; uniform vec2 uOff, uRep;
 varying vec2 vUv; varying float vDist;
 void main(){
   vec2 uv = vUv*uRep + uOff;
@@ -344,7 +350,7 @@ void main(){
   float d = texture2D(tDetail, uv*vec2(3.0, 1.5) + vec2(uTime*0.004, 0.0)).r;
   float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x) * smoothstep(0.0, 0.15, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
   vec3 e = c * (0.55 + 0.9*d) * uGain * edge;
-  gl_FragColor = vec4(e, uAlpha * edge * dot(c, vec3(0.3)));
+  gl_FragColor = vec4(e, uPremul > 0.5 ? uAlpha * edge : 1.0);
 }`;
 // Photo-evaporation streamers rising off a pillar tip.
 const STREAM_FRAG = /* glsl */`
@@ -352,14 +358,14 @@ uniform sampler2D tDetail; uniform float uTime, uGain, uSeed; uniform vec3 uCol;
 varying vec2 vUv; varying float vDist;
 void main(){
   vec2 p = vec2(vUv.x - 0.5, vUv.y);           // y: 0 at the tip, 1 high above
-  float w = 0.06 + 0.40*p.y;
+  float w = 0.05 + 0.22*p.y;
   float cone = exp(-pow(p.x/w, 2.0)) * smoothstep(0.0, 0.06, p.y) * (1.0 - smoothstep(0.35, 1.0, p.y));
   vec2 q = vec2(p.x/(0.25 + p.y), p.y*0.8);
-  float n1 = texture2D(tDetail, q*vec2(2.0, 1.0) + vec2(uSeed, -uTime*0.035)).b;
-  float n2 = texture2D(tDetail, q*vec2(5.0, 2.2) + vec2(uSeed*1.7, -uTime*0.06)).r;
-  float wisp = pow(n1, 3.0) * (0.4 + 1.2*n2);
+  float n1 = texture2D(tDetail, q*vec2(0.9, 0.45) + vec2(uSeed, -uTime*0.02)).b;
+  float n2 = texture2D(tDetail, q*vec2(2.2, 1.0) + vec2(uSeed*1.7, -uTime*0.035)).r;
+  float wisp = (0.25 + 0.75*n1) * (0.5 + 0.7*n2);
   vec3 col = mix(uCol, vec3(0.45, 0.75, 1.0), smoothstep(0.1, 0.8, p.y)) * cone * wisp * uGain;
-  gl_FragColor = vec4(col, 0.0);
+  gl_FragColor = vec4(col, 1.0);
 }`;
 
 function pointsMaterial(extra = {}, vert = POINTS_VERT) {
@@ -510,6 +516,7 @@ export default class Planetary {
       const m = new THREE.ShaderMaterial({ vertexShader: FLARE_VERT, fragmentShader: FLARE_FRAG, transparent: true, depthWrite: false, depthTest: false, ...ADD,
         uniforms: { uTime, uScale: { value: this.uScale }, uCol: { value: new THREE.Vector3(1.6, 2.2, 3.2) }, uCore: { value: new THREE.Vector3(14, 15, 18) } } });
       const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.renderOrder = 5; S.add(mesh);
+      E.dwarf = g.getAttribute('iData');
       this.disposables.push(g, m, base);
     }
 
@@ -558,13 +565,14 @@ export default class Planetary {
     const atom = this.atomEye(t);
     E.atom.geometry.attributes.position.array.set([atom.x, atom.y, atom.z]);
     E.atom.geometry.attributes.position.needsUpdate = true;
+    E.dwarf.array[0] = clamp(0.15 * cam.position.length(), 1.6, 5.5); E.dwarf.needsUpdate = true;
     const swell = smoothstep(4, 12, t);
     return {
       scene: E.scene, camera: cam,
       target: t >= 1.8 ? atom : null,
       post: {
         exposure: 1.05 + 0.15 * swell, bloomStrength: 0.75, bloomThreshold: 0.75, bloomKnee: 0.7, bloomRadius: 0.9,
-        streak: 0.18, streakTint: [0.55, 0.85, 1.0], saturation: 1.06, contrast: 1.06, vignette: 0.42,
+        streak: 0.14, streakTint: [0.55, 0.85, 1.0], saturation: 1.06, contrast: 1.06, vignette: 0.42,
         tint: [1.0, 0.98, 0.97], grain: 0.04, ca: 0.0022,
       },
     };
@@ -604,35 +612,37 @@ export default class Planetary {
     }
     // --- ionised gas backdrop + haze veils
     const gasPlane = (z, w, h, x, y, gain, alpha, off, rep, order, blend) => {
-      const m = bill(GAS_FRAG, { tMap: { value: gasRT.texture }, tDetail: { value: this.detailRT.texture }, uGain: { value: gain }, uTime, uAlpha: { value: alpha },
+      const m = bill(GAS_FRAG, { tMap: { value: gasRT.texture }, tDetail: { value: this.detailRT.texture }, uGain: { value: gain }, uTime, uAlpha: { value: alpha }, uPremul: { value: blend === PREMUL ? 1 : 0 },
         uOff: { value: new THREE.Vector2(...off) }, uRep: { value: new THREE.Vector2(...rep) } }, blend);
       const mesh = new THREE.Mesh(geo, m); mesh.scale.set(w, h, 1); mesh.position.set(x, y, z); mesh.frustumCulled = false; mesh.renderOrder = order; S.add(mesh);
     };
-    gasPlane(-250, 760, 330, 0, 10, 1.0, 0.85, [0, 0], [1, 1], -90, PREMUL);
-    gasPlane(-140, 420, 190, 10, 5, 0.22, 0.0, [0.31, 0.12], [0.8, 0.9], -60, ADD);
+    gasPlane(-260, 1100, 470, 0, 10, 0.40, 1.0, [0, 0], [1, 1], -90, PREMUL);
+    gasPlane(-150, 700, 300, 10, 5, 0.10, 0.0, [0.31, 0.12], [0.8, 0.9], -60, ADD);
 
     // --- pillars: [tex, x, baseY, z, height, gain, haze]
     const P = [
-      [1, -38, -70, -175, 85, 0.85, 0.55],   // distant left
-      [2, 52, -68, -160, 70, 0.85, 0.55],    // distant right
-      [0, -16, -62, -96, 100, 1.0, 0.18],    // hero pillar
-      [1, 22, -58, -80, 66, 1.0, 0.12],      // right companion
-      [2, 52, -45, -48, 52, 1.05, 0.0],      // near right
-      [0, -46, -60, -34, 78, 0.9, 0.0],      // foreground left mass
+      [1, -78, -95, -200, 90, 0.9, 0.55],   // distant left
+      [2, 95, -90, -205, 80, 0.9, 0.55],    // distant right
+      [2, 60, -80, -145, 58, 0.95, 0.30],   // small third
+      [1, 27, -82, -118, 88, 1.0, 0.15],    // companion
+      [0, -20, -100, -102, 150, 1.0, 0.05], // hero pillar
+      [2, 40, -52, -48, 40, 1.0, 0.0],      // foreground right (lower corner)
+      [1, -44, -50, -42, 36, 0.95, 0.0],    // foreground left (lower corner)
     ];
     N.tips = [];
     P.forEach(([ti, x, by, z, h, gain, haze], i) => {
       const w = h * 0.5;
-      const m = bill(PILLAR_FRAG, { tMap: { value: pillarTex[ti].texture }, uGain: { value: gain }, uHaze: { value: haze }, uHazeCol: { value: new THREE.Vector3(0.10, 0.28, 0.36) } }, PREMUL);
-      const mesh = new THREE.Mesh(geo, m); mesh.scale.set(w, h, 1); mesh.position.set(x, by + h / 2, z);
+      const m = bill(PILLAR_FRAG, { tMap: { value: pillarTex[ti].texture }, uGain: { value: gain }, uHaze: { value: haze }, uHazeCol: { value: new THREE.Vector3(0.035, 0.085, 0.12) } }, PREMUL);
+      const mesh = new THREE.Mesh(geo, m); mesh.scale.set(w * 1.2, h, 1); mesh.position.set(x, by + h / 2, z);
       mesh.frustumCulled = false; mesh.renderOrder = -50 + i * 2; S.add(mesh);
       const lean = [0.05, -0.07, 0.10][ti];
-      const tip = new THREE.Vector3(x + lean * 0.8 * 0.8 * w, by + h * 0.90, z + 0.5);
+      const tip = new THREE.Vector3(x + lean * 0.72 * 0.72 * w * 1.2, by + h * 0.84, z + 0.5);
       N.tips.push(tip);
       // streamers off the tip
-      const sm = bill(STREAM_FRAG, { tDetail: { value: this.detailRT.texture }, uTime, uGain: { value: 0.55 * gain * (1 - haze * 0.6) }, uSeed: { value: i * 0.37 },
+      if (i >= 5) return;
+      const sm = bill(STREAM_FRAG, { tDetail: { value: this.detailRT.texture }, uTime, uGain: { value: 0.10 * gain * (1 - haze * 0.6) }, uSeed: { value: i * 0.37 },
         uCol: { value: new THREE.Vector3(1.0, 0.62, 0.32) } }, ADD);
-      const st = new THREE.Mesh(geo, sm); st.scale.set(w * 0.9, h * 0.55, 1); st.position.set(tip.x, tip.y - h * 0.04 + h * 0.275, z + 0.6);
+      const st = new THREE.Mesh(geo, sm); st.scale.set(w * 0.8, h * 0.4, 1); st.position.set(tip.x, tip.y - h * 0.03 + h * 0.2, z + 0.6);
       st.frustumCulled = false; st.renderOrder = -49 + i * 2; S.add(st);
     });
 
@@ -657,22 +667,23 @@ export default class Planetary {
     // --- stars: already-shining young stars + ignitions at the tips, one by one
     {
       const T = N.tips;
-      const atomStar = new THREE.Vector3().copy(T[2]).add(new THREE.Vector3(1.2, -2.0, 0.8));
+      const atomStar = new THREE.Vector3().copy(T[4]).add(new THREE.Vector3(1.0, -2.6, 0.8));
       N.atomStar = atomStar;
       const list = [
-        // pos, size, t0 (-100 = always on), kind(1=spikes)
-        [T[2].clone().add(new THREE.Vector3(-3, -6, 1)), 3.0, 1.0, 1],
-        [T[3].clone().add(new THREE.Vector3(0.5, -1.0, 1)), 2.6, 2.3, 1],
-        [T[4].clone().add(new THREE.Vector3(-1.0, -2.5, 1)), 2.2, 3.6, 1],
-        [T[0].clone().add(new THREE.Vector3(0, -2, 1)), 4.0, 4.6, 1],
-        [atomStar, 3.4, 6.0, 1],
-        [T[1].clone().add(new THREE.Vector3(1, -3, 1)), 4.0, 7.2, 1],
-        [T[5].clone().add(new THREE.Vector3(2.0, -3.0, 1)), 2.0, 8.4, 1],
-        [T[3].clone().add(new THREE.Vector3(-2.5, -7, 1)), 2.2, 9.6, 1],
-        [T[2].clone().add(new THREE.Vector3(4, -14, 1)), 2.4, 10.6, 1],
-        [new THREE.Vector3(-70, 60, -200), 9, -100, 1],
-        [new THREE.Vector3(35, 48, -190), 7, -100, 1],
-        [new THREE.Vector3(120, -10, -230), 6, -100, 1],
+        // pos, size(world), t0 (-100 = always on), kind(1=spikes)
+        [T[3].clone().add(new THREE.Vector3(0.5, -1.5, 1)), 8.0, 1.0, 1],
+        [T[4].clone().add(new THREE.Vector3(-3.5, -14, 1)), 7.0, 2.3, 1],
+        [T[2].clone().add(new THREE.Vector3(0.0, -1.5, 1)), 9.0, 3.6, 1],
+        [T[0].clone().add(new THREE.Vector3(0, -2, 1)), 13.0, 4.6, 1],
+        [atomStar, 9.0, 6.0, 1],
+        [T[1].clone().add(new THREE.Vector3(1, -3, 1)), 13.0, 7.2, 1],
+        [T[5].clone().add(new THREE.Vector3(0.5, -1.5, 1)), 4.0, 8.4, 1],
+        [T[3].clone().add(new THREE.Vector3(-2.5, -9, 1)), 6.0, 9.6, 1],
+        [T[4].clone().add(new THREE.Vector3(3, -22, 1)), 6.5, 10.6, 1],
+        [new THREE.Vector3(-70, 60, -200), 22, -100, 1],
+        [new THREE.Vector3(35, 48, -190), 16, -100, 1],
+        [new THREE.Vector3(120, -10, -230), 14, -100, 1],
+        [new THREE.Vector3(-130, -30, -230), 12, -100, 1],
       ];
       const base = keep(new THREE.PlaneGeometry(1, 1));
       const g = keep(new THREE.InstancedBufferGeometry());
@@ -721,11 +732,14 @@ export default class Planetary {
     const dark = 1 - 0.55 * smoothstep(8.5, 12, t);
     return {
       scene: N.scene, camera: cam,
-      target: t < 6.0 ? atom : null,
+      // After SIGNAL LOST (local 6) the overlay animates the lost reticle for ~3.4 s. We keep feeding it the
+      // frozen ignition point so that animation is deterministic (the overlay's own _lastPos is per-worker
+      // state, and a render-chunk boundary falls at T=230).
+      target: t < 6.0 ? atom : (t < 9.6 ? N.atomStar : null),
       post: {
         exposure: 1.0 * dark, bloomStrength: 0.7, bloomThreshold: 0.8, bloomKnee: 0.7, bloomRadius: 0.85,
-        streak: 0.14, streakTint: [1.0, 0.8, 0.6], saturation: 1.08, contrast: 1.08, vignette: 0.5,
-        tint: [1.02, 0.98, 0.95], grain: 0.045, ca: 0.002,
+        streak: 0.14, streakTint: [1.0, 0.8, 0.6], saturation: 1.0, contrast: 1.08, vignette: 0.5,
+        tint: [1.02, 0.98, 0.95], grain: 0.045, ca: 0.0009,
         fade: smoothstep(10.8, 12.0, t),
       },
     };
