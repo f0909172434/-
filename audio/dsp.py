@@ -1,4 +1,4 @@
-"""Core DSP toolkit for 歸途 THE LONG WAY HOME.
+"""Core DSP toolkit for the 卜 ORACLE soundtrack (inherited from 歸途 THE LONG WAY HOME).
 
 Everything here is pure numpy / scipy: band-limited oscillators (PolyBLEP),
 noise colours, filters (static biquads + STFT time-varying filters), modal

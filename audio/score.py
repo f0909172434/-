@@ -1,664 +1,622 @@
-"""The score of 歸途 THE LONG WAY HOME (D minor -> D major).
+"""The score of 卜 ORACLE.
 
-Main Theme (Dm – B♭ – F – C), two 4-bar phrases:
-  A:  F  G A | B♭. A | A  G F | G———         (stepwise, half cadence)
-  B:  F  G A | F'(leap!) E D | C. A | G  E  -> D
-Atom leitmotif: D6 – A6 – E7 (open fifths) on celesta + glass bell.
+Key: A minor, built on the yu-mode pentatonic A C D E G (no semitones: any canon of it is consonant),
+turning to A major (A B C# E F#) in the memory river.
+
+The question motif Q is the sent question itself, seven notes for seven characters, shaped by the tones
+of the Mandarin (high, falling, low, low, rising, light, and the unresolved question mark):
+
+        她   會   好   起   來   嗎   ？
+        E5   D5   A4   G4   C5   A4   D5        rhythm (beats): 1 2 1 1 1.5 .5 3
+
+It is heard as seven glass tokens in the mind (29.0 + 0.35 i, sfx.py), becomes a canon in the river of
+questions (every entry another person asking it), grows old on a solo bow, is hummed by a human voice
+under 婦好, becomes Leibniz's clockwork subject, rushes back, is played once, very softly, under 'someone
+loves someone very much', and returns in A major in the memory river, where it finally resolves.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from dsp import SR, TWO_PI, n2m, mtof, ns, tvec, pan, fade, pts_env
-from instruments import (strings_chord, strings_line, strings_spicc, brass_chord, brass_line,
-                         braam, choir, choir_line, piano_note, atom_note, celesta, bell,
-                         taiko, timpani, cymbal, pad, sub_drone, shepard, ensemble)
+from dsp import SR, TWO_PI, n2m, mtof, ns, tvec, pan, fade, pts_env, lp
+from instruments import (strings_chord, strings_line, strings_spicc, choir, choir_line, piano_note, shepard,
+                         glass_ping, bowed_glass, harpsichord, xun_line, solo_bowed_line, voice_line,
+                         stone_chime, bronze_bell, data_pluck, blip)
 
-# ----------------------------------------------------------------------------
-# harmony helpers
-# ----------------------------------------------------------------------------
 PC = {'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5, 'F#': 6, 'Gb': 6,
       'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11}
-CH = {'Dm': ['D', 'F', 'A'], 'Bb': ['Bb', 'D', 'F'], 'F': ['F', 'A', 'C'], 'C': ['C', 'E', 'G'],
-      'Gm': ['G', 'Bb', 'D'], 'A': ['A', 'C#', 'E'], 'D': ['D', 'F#', 'A'], 'G': ['G', 'B', 'D'],
-      'Bm': ['B', 'D', 'F#'], 'Am': ['A', 'C', 'E'], 'Eb': ['Eb', 'G', 'Bb']}
+YU = ['A', 'C', 'D', 'E', 'G']                       # A yu mode (minor pentatonic)
+
+Q = ['E5', 'D5', 'A4', 'G4', 'C5', 'A4', 'D5']        # 她 會 好 起 來 嗎 ？
+Q_MAJ = ['E5', 'C#5', 'A4', 'F#4', 'B4', 'A4', 'C#5']  # the same contour in A major pentatonic
+Q_PEAK = ['E5', 'C#5', 'A4', 'F#4', 'A5', 'F#5', 'E5']  # 來 leaps up at the climax of the memory river
+Q_RHY = [(0, 1), (1, 2), (3, 1), (4, 1), (5, 1.5), (6.5, 0.5), (7, 3)]   # (beat, beats)
+
+ROOMY = {'room': 0.1, 'hall': 0.3, 'space': 0.2}
+HALL = {'hall': 0.3, 'space': 0.15}
+BIG = {'hall': 0.25, 'space': 0.4}
+HUGE = {'hall': 0.2, 'space': 0.65}
+DATA = {'hall': 0.15, 'space': 0.45}
 
 
-def pcs(ch):
-    return [PC[x] for x in CH[ch]]
+def P(x, p=0.0):
+    return pan(x, p) * 0.7071
 
 
-def tones(ch, lo, hi):
-    lo, hi = int(n2m(lo)), int(n2m(hi))
-    return [m for m in range(lo, hi + 1) if m % 12 in pcs(ch)]
+def m_(p, octv=0):
+    return n2m(p) + 12 * octv
 
 
-def root(ch, octv):
-    return 12 * (octv + 1) + pcs(ch)[0]
-
-
-# theme data: (beat, beats, pitch)
-THEME_A = [(0, 2, 'F4'), (2, 1, 'G4'), (3, 1, 'A4'), (4, 3, 'Bb4'), (7, 1, 'A4'),
-           (8, 2, 'A4'), (10, 1, 'G4'), (11, 1, 'F4'), (12, 4, 'G4')]
-THEME_B = [(0, 2, 'F4'), (2, 1, 'G4'), (3, 1, 'A4'), (4, 2, 'F5'), (6, 1, 'E5'), (7, 1, 'D5'),
-           (8, 3, 'C5'), (11, 1, 'A4'), (12, 2, 'G4'), (14, 2, 'E4')]
-THEME_A_MAJ = [(0, 2, 'F#4'), (2, 1, 'G4'), (3, 1, 'A4'), (4, 3, 'B4'), (7, 1, 'A4'),
-               (8, 2, 'A4'), (10, 1, 'G4'), (11, 1, 'F#4'), (12, 2, 'G4'), (14, 2, 'E4')]
-THEME_B_MAJ = [(0, 2, 'F#4'), (2, 1, 'G4'), (3, 1, 'A4'), (4, 2, 'F#5'), (6, 1, 'E5'), (7, 1, 'D5'),
-               (8, 3, 'D5'), (11, 1, 'B4'), (12, 2, 'A4'), (14, 1, 'G4'), (15, 1, 'E4')]
-
-
-def theme(th, beat, octv=0, vel=0.85, accent_leap=0.0, legato=1.0, beat_times=None):
-    """-> [(t_rel, dur, midi, vel)].  beat_times: optional array mapping beat->time."""
+def motif(pitches, t0, beat, vel=0.8, octv=0, rhythm=Q_RHY, legato=0.97, last=None):
+    """-> [(t, dur, midi, vel)] absolute times."""
     out = []
-    for b, d, p in th:
-        if beat_times is not None:
-            t0 = float(np.interp(b, np.arange(len(beat_times)), beat_times))
-            t1 = float(np.interp(b + d, np.arange(len(beat_times)), beat_times))
-        else:
-            t0, t1 = b * beat, (b + d) * beat
-        m = n2m(p) + 12 * octv
-        v = vel * (1 + accent_leap * (n2m(p) >= 74))
-        out.append((t0, (t1 - t0) * legato, m, min(v, 1.0)))
+    for i, ((b, d), p) in enumerate(zip(rhythm, pitches)):
+        if last is not None and i == len(pitches) - 1:
+            d = last
+        out.append((t0 + b * beat, d * beat * legato, m_(p, octv), vel))
     return out
 
 
-def shift(notes, dt):
-    return [(t + dt, d, m, v) for (t, d, m, v) in notes]
+def timed(pitches, times, durs, vel=0.8, octv=0):
+    return [(t, d, m_(p, octv), vel) for p, t, d in zip(pitches, times, durs)]
 
 
-def pan_st(x, p):
-    a = (p + 1) * np.pi / 4
-    return x * np.array([[np.cos(a)], [np.sin(a)]]) * np.sqrt(2)
+def rel(notes, t0):
+    return [(t - t0, d, m, v) for (t, d, m, v) in notes]
 
 
-# ----------------------------------------------------------------------------
-# reusable gestures
-# ----------------------------------------------------------------------------
-HALL = {'hall': 0.30, 'space': 0.15}
-BIG = {'hall': 0.25, 'space': 0.45}
-HUGE = {'hall': 0.2, 'space': 0.7}
+def pshift(pitches, steps, scale=YU):
+    """Modal transposition inside the pentatonic set."""
+    pcs = [PC[s] for s in scale]
+    out = []
+    for p in pitches:
+        mm = int(round(m_(p)))
+        o, pc = divmod(mm, 12)
+        j = pcs.index(pc) + steps
+        o += j // len(pcs)
+        out.append(o * 12 + pcs[j % len(pcs)])
+    return out
 
 
-def leitmotif(B, t, spacing=0.35, vel=0.8, db=0.0, send=None, layer='main', warm=False,
-              notes=('D6', 'A6', 'E7')):
-    send = send or {'hall': 0.2, 'space': 0.6}
-    pans = [-0.25, 0.05, 0.3]
-    for i, p in enumerate(notes):
-        x = atom_note(p, vel * (1 - 0.06 * i), seed=11 + i, warm=warm)
-        B.add(t + i * spacing, pan_st(x, pans[i % 3]), db, send, layer)
+def line(M, kind, notes, db, send, seed, **kw):
+    """Add a legato line (absolute-time notes) played by a line instrument."""
+    t0 = notes[0][0]
+    fn = {'str': strings_line, 'choir': choir_line, 'xun': xun_line, 'bow': solo_bowed_line,
+          'voice': voice_line}[kind]
+    M.add(t0, fn(rel(notes, t0), seed=seed, **kw), db, send)
 
 
-def timp_roll(B, t0, t1, pitch, v0, v1, rate=13.0, db=0.0, send=HALL, seed=0):
-    r = np.random.default_rng(seed)
-    t, i = t0, 0
-    while t < t1:
-        x = (t - t0) / max(t1 - t0, 1e-6)
-        v = (v0 + (v1 - v0) * x ** 1.5) * r.uniform(0.85, 1.0)
-        B.add(t, pan(timpani(pitch, v, variant=i), 0.15 * (-1) ** i) * 0.7071, db, send)
-        t += r.uniform(0.9, 1.1) / rate
-        i += 1
+def pno(M, t, p, v, d, db=6.0, send=None, seed=0):
+    v = round(min(max(v, 0.04), 1.0) * 50) / 50
+    d = round(max(d, 0.1) * 20) / 20
+    M.add(t, piano_note(p, v, d, seed=seed), db, send or ROOMY)
 
 
-def cym_swell(B, t_end, dur=2.5, db=0.0, send=BIG, seed=0):
-    c = cymbal(dur + 0.3, seed=seed)[::-1]
-    c = fade(c, 0.4, 0.01)
-    st = np.stack([c, np.concatenate([np.zeros(ns(0.011)), c[:-ns(0.011)]])])
-    B.add(t_end - c.shape[0] / SR, st, db, send)
+def voices(M, t0, bars, parts, sec, db, send, seed, att=0.5, rel_=1.5, bright=0.5, dyn=None, glide=0.06):
+    """Sustained harmony as smooth legato voices. bars: [(t, dur)], parts: [[pitch per bar] per voice]."""
+    for j, ps in enumerate(parts):
+        notes = [(t - t0, d, m_(p), 0.9) for (t, d), p in zip(bars, ps)]
+        M.add(t0, strings_line(notes, sec, rel=rel_, att=att, glide=glide, bright=bright, dyn=dyn,
+                               seed=seed + j), db, send)
 
 
-def grains(B, t0, t1, notes, density, db, seed=0, send=None, fin=2.0, fout=2.0):
-    r = np.random.default_rng(seed)
-    send = send or {'space': 0.9}
-    count = int((t1 - t0) * density)
-    for _ in range(count):
-        t = r.uniform(t0, t1)
-        d = r.uniform(0.05, 0.22)
-        n = ns(d)
-        tt = tvec(n)
-        f = float(mtof(n2m(r.choice(notes)))) * (2 ** (r.normal(0, 0.03) / 12))
-        g = np.sin(TWO_PI * f * tt + r.uniform(0, TWO_PI)) * np.hanning(n)
-        g += 0.25 * np.sin(TWO_PI * 2 * f * tt) * np.hanning(n) ** 2
-        env = min(1.0, (t - t0) / fin, (t1 - t) / fout) * r.uniform(0.3, 1.0)
-        B.add(t, pan(g * 0.06 * env, r.uniform(-0.85, 0.85)), db, send)
-
-
-def violin_harmonic(pitch, dur, seed=0):
-    r = np.random.default_rng(seed)
-    f = float(mtof(n2m(pitch)))
-    n = ns(dur)
-    t = tvec(n)
-    vib = 1 + 0.0012 * np.sin(TWO_PI * 5.0 * t) * np.clip((t - 1.0) / 1.5, 0, 1)
-    ph = np.cumsum(f * vib) / SR
-    y = np.sin(TWO_PI * ph) + 0.06 * np.sin(TWO_PI * 2 * ph) + 0.025 * np.sin(TWO_PI * 3 * ph)
-    from dsp import bp, colored_noise
-    bow = bp(r.standard_normal(n), f * 0.8, f * 1.6) * 0.05
-    env = np.minimum(t / 0.9, 1) ** 2 * np.clip((dur - t) / 2.5, 0, 1)
-    env *= 1 + 0.06 * np.sin(TWO_PI * 0.3 * t)
-    return pan((y + bow) * env * 0.08, -0.2)
-
-
-def pulse_tick(pitch, vel, seed=0):
-    """Soft synth pulse (filtered square) for the tree-of-life build."""
-    from dsp import square, lp
-    f = float(mtof(n2m(pitch)))
-    n = ns(0.25)
-    t = tvec(n)
-    y = lp(square(f, n, 0.0, 0.3), 900 + 1500 * vel) * np.exp(-t / 0.06) * np.minimum(t / 0.002, 1)
-    return pan(fade(y * 0.06 * vel, 0, 0.02), 0.0)
-
-
-# ----------------------------------------------------------------------------
-# the score, section by section
-# ----------------------------------------------------------------------------
+# ============================================================================
 def render(M, T, log=print):
-    """Render the whole score into bus M (layers: main / tree / night / free)."""
-    _prologue(M, T)
-    _act1(M, T)
-    log('  music: prologue + act I forge')
-    _fusion_collapse(M, T)
-    log('  music: fusion + collapse')
-    _supernova(M, T)
-    log('  music: supernova + title')
-    _drift(M, T)
-    log('  music: act II drift / ignition / young earth')
-    _ocean(M, T)
-    with M.layer('tree'):
-        _tree(M, T)
-    log('  music: ocean + tree of life')
-    with M.layer('night'):
-        _night(M, T)
-    log('  music: night / piano theme / lifetime')
-    _return(M, T)
-    log('  music: act IV return + climax')
-    _home(M, T)
-    log('  music: nursery / new world / home / credits')
+    """The whole score into bus M (layers: main / pre / rush / mem)."""
+    _listening(M, T)
+    _mind(M, T)
+    log('  music: listening tone, mind (data pattern, attention glass, the warm region)')
+    _river(M, T)
+    _upstream(M, T)
+    log('  music: river of questions (canon), upstream (solo bow, drone)')
+    _bone(M, T)
+    _lineage(M, T)
+    log('  music: bone (xun, stone chime, hummed Q), lineage (yin/yang bells, bloom, Leibniz, tape, circuits)')
+    with M.layer('rush'):
+        _rush(M, T)
+    _answer(M, T)
+    with M.layer('mem'):
+        _memory(M, T)
+    _title(M, T)
+    log('  music: rush, answer piano, memory river (A major), title chord')
 
 
-def _prologue(M, T):
-    t = T['presents_note']  # 13.4: single low piano note + airy shimmer
-    M.add(t, piano_note('D1', 0.62, 3.4, seed=1), 6.0, {'hall': 0.25, 'space': 0.5})
-    M.add(t + 0.004, piano_note('D2', 0.5, 3.4, seed=2), 2.0, {'hall': 0.25, 'space': 0.5})
-    M.add(t + 0.1, pad(['A5', 'D6', 'E6'], 2.2, att=1.4, rel=1.8, cutoff=5000, sines=1.2,
-                       air=0.6, seed=3), -26.0, HUGE)
+# ----------------------------------------------------------------------------
+def _listening_tone(M, t0, t1, peak_t, db):
+    d = t1 - t0
+    n = ns(d)
+    t = tvec(n)
+    f = float(mtof(n2m('E6')))
+    y = np.sin(TWO_PI * f * t) + 0.06 * np.sin(TWO_PI * 2 * f * t + 0.3)
+    env = pts_env(n, [(0, 0), (min(2.0, d * 0.4), 0.7), (peak_t - t0, 1.0), (d - 1.0, 0.7), (d, 0)])
+    env *= 1 + 0.15 * np.sin(TWO_PI * 0.23 * t)
+    M.add(t0, P(y * env * 0.01, 0.1), db, {'space': 0.5})
 
 
-def _act1(M, T):
-    t0 = T['forge']  # 17
-    tf = T['fusion']  # 33
-    L = tf - t0
-    M.add(t0, choir(['D2', 'D3'], L - 0.4, 'u', att=4.0, rel=0.6, seed=21,
-                    dyn=[(0, 0.55), (9, 0.8), (L, 1.0)], morph=('a', [(0, 0), (8, 0), (L, 0.65)])),
-          -9.0, BIG)
-    M.add(t0 + 6, choir(['A2'], L - 6.4, 'u', att=4.0, rel=0.6, seed=22,
-                        morph=('a', [(0, 0), (4, 0), (L - 6, 0.6)])), -14.0, BIG)
-    M.add(t0, sub_drone('D1', L - 0.3, att=5.0, rel=0.4, seed=23), -4.0, None)
-    M.add(t0 + 4, strings_chord(['D1', 'D2'], L - 4.3, 'cb', att=4.0, rel=0.4, seed=24,
-                                dyn=[(0, 0.5), (L - 4, 1.0)], bright=0.4), -12.0, HALL)
-    M.add(t0 + 8, strings_chord(['D2', 'A2'], L - 8.3, 'vc', att=4.0, rel=0.4, seed=25,
-                                dyn=[(0, 0.5), (L - 8, 1.0)], bright=0.5), -13.0, HALL)
-    # low brass swell into the white flash
-    M.add(tf - 4.6, brass_chord(['D2', 'A2'], 4.4, 'tbn', att=4.2, rel=0.25, seed=26,
-                                dyn=[(0, 0.3), (4.4, 1.0)]), -9.0, BIG)
-    M.add(tf - 4.6, brass_chord(['D3', 'A3'], 4.4, 'hn', att=4.2, rel=0.25, seed=27,
-                                dyn=[(0, 0.3), (4.4, 1.0)]), -11.0, BIG)
-    timp_roll(M, tf - 2.6, tf - 0.05, 'D2', 0.15, 0.75, db=-6.0, seed=28)
+def _listening(M, T):
+    # the AI's caret: silence, and a very faint high tone, as if something is listening
+    _listening_tone(M, T['ai_caret'], T['mind'] + 1.4, T['todata'][0], -12.0)
 
 
-def _fusion_collapse(M, T):
-    t0 = T['fusion']  # 33, 96 BPM, bar = 2.5 s
-    tcut = T['silence']  # 61.5
-    bar = 2.5
-    e8 = bar / 8
-    chords = ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'A']
-    acc = [1, .55, .7, .95, .55, .7, .9, .65]
-    octs = [0, 0, 12, 0, 0, 12, 0, 12]
-    k = 0
-    for b, ch in enumerate(chords):
-        tb = t0 + b * bar
-        lvl = float(np.interp(b, [0, 3, 4, 6, 8, 11], [0.6, 0.66, 0.72, 0.82, 0.95, 1.0]))
-        r2 = root(ch, 2)
-        vt = tones(ch, 'D4', 'D5')[:3]
-        hi = tones(ch, 'A4', 'A5')
-        for i in range(8):
-            t = tb + i * e8
-            if t >= tcut - 0.02:
-                break
-            v = acc[i] * lvl
-            k += 1
-            M.add(t, strings_spicc(r2 + 12 + octs[i], v, dur=0.24, sec='vc', seed=k), -1.0, HALL)
-            M.add(t, strings_spicc(r2 + octs[i], v, dur=0.27, sec='cb', seed=k + 500), -4.0, HALL)
-            if b >= 2:
-                M.add(t, strings_spicc(vt[[0, 1, 2, 1, 0, 1, 2, 1][i]], v * 0.8, dur=0.2, sec='vla',
-                                       seed=k + 1000), -5.0, HALL)
-            if b >= 7:
-                for j in range(2):
-                    tt = t + j * e8 / 2
-                    if tt >= tcut - 0.02:
-                        break
-                    p = hi[(i * 2 + j) % len(hi)] + 12 * (b >= 10)
-                    M.add(tt, strings_spicc(p, (0.55 + 0.35 * (j == 0)) * lvl, dur=0.12, sec='vln',
-                                            seed=k * 3 + j), -6.0 + 1.5 * (b - 7), HALL)
-        # soft core pulse (felt more than heard) then real taiko from bar 8
-        if b < 8:
-            M.add(tb, pan(taiko(0.3 + 0.04 * b, 'o', b), 0) * 0.7071, -10.0, HALL)
-        else:
-            pat = [(0, 1.0), (3, 0.6), (4, 0.85), (6, 0.7), (7, 0.55)] if b < 10 else \
-                  [(0, 1.0), (2, .6), (3, .7), (4, .9), (5, .6), (6, .8), (7, .7)]
-            for pos, v in pat:
-                t = tb + pos * e8
-                if t < tcut - 0.02:
-                    M.add(t, pan(taiko(v, 'o', pos + b), 0.1 * ((pos % 2) * 2 - 1)) * 0.7071, -5.0, HALL)
-            M.add(tb, brass_line([(0, 0.55, r2 + 12, 1.0)], 'tbn', rel=0.35, att=0.02, seed=60 + b),
-                  -7.0, BIG)
-            M.add(tb, brass_line([(0, 0.55, r2 + 7 + 12 if ch != 'A' else r2 + 19, 1.0)], 'hn',
-                                 rel=0.35, att=0.02, seed=70 + b), -10.0, BIG)
-
-    # sustained string pad after the atom is born (violins, high) -> tremolo cluster
-    tl = T['lock1']  # 43.5
-    M.add(tl + 0.3, strings_chord(['A5', 'D6'], 48.0 - tl - 0.3, 'vln', att=2.0, rel=0.8,
-                                  dyn=[(0, 0.6), (4, 0.8)], seed=31), -13.0, BIG)
-    M.add(48.0, strings_chord(['F5', 'A5', 'C6'], 5.0, 'vln', att=0.6, rel=0.5, seed=32), -12.0, BIG)
-    M.add(53.0, strings_chord(['F5', 'A5', 'D6'], 2.5, 'vln', att=0.3, rel=0.3, seed=33, trem=0.6), -10.0, BIG)
-    M.add(55.5, strings_chord(['F5', 'Bb5', 'D6'], 2.5, 'vln', att=0.2, rel=0.3, seed=34, trem=0.6), -9.0, BIG)
-    M.add(58.0, strings_chord(['G5', 'Bb5', 'D6', 'G6'], 2.5, 'vln', att=0.2, rel=0.3, seed=35, trem=0.7),
-          -8.0, BIG)
-    M.add(60.5, strings_chord(['A5', 'C#6', 'E6', 'A6'], 1.1, 'vln', att=0.15, rel=0.05, seed=36, trem=0.7),
-          -6.0, BIG)
-    # choir crescendo through the collapse
-    for tb, ch, nts in [(53.0, 'Dm', ['D3', 'A3', 'D4', 'F4']), (55.5, 'Bb', ['Bb2', 'F3', 'D4', 'F4']),
-                        (58.0, 'Gm', ['G2', 'D3', 'Bb3', 'G4']), (60.5, 'A', ['A2', 'E3', 'C#4', 'A4'])]:
-        d = min(2.5, tcut - tb)
-        lv = float(np.interp(tb, [53, 60.5], [-12, -5]))
-        M.add(tb, choir(nts, d - 0.05, 'a', att=0.4, rel=0.05, seed=int(tb * 10)), lv, BIG)
-    # the atom is born: leitmotif on the 8th-note grid
-    leitmotif(M, tl, spacing=e8, vel=0.9, db=0.0)
-    # Shepard-tone riser 49 -> 61.5 (endless ascent), hard stop at the cut
-    ts = T['collapse']
-    sh = shepard(tcut - ts, [(0, 0.10), (6, 0.18), (tcut - ts, 0.42)], seed=41)
-    n = sh.shape[1]
-    env = pts_env(n, [(0, -40), (4, -22), (8, -12), (tcut - ts - 0.3, -2), (tcut - ts, 0)], db=True)
-    M.add(ts, sh * env, -2.0, BIG)
-
-
-def _supernova(M, T):
-    t = T['supernova']  # 63
-    M.add(t, braam(['D1', 'D2', 'A2', 'D3'], 9.0, seed=51, decay=3.2), -5.0, HUGE)
-    M.add(t, braam(['D2', 'F3', 'A3'], 6.0, seed=52, decay=2.0, peak_fc=5000), -13.0, HUGE)
-    tt = T['title']  # 65 full orchestra D minor, decays by 75
-    L = 9.0
-    dyn = [(0, 0.55), (1.5, 1.0), (3.5, 0.75), (7, 0.3), (L + 2.5, 0.0)]
-    M.add(tt, strings_chord(['D5', 'F5', 'A5', 'D6'], L, 'vln', att=1.0, rel=2.5, dyn=dyn, seed=61, bright=0.8), -3.0, HUGE)
-    M.add(tt, strings_chord(['A3', 'D4', 'F4', 'A4'], L, 'vla', att=1.0, rel=2.5, dyn=dyn, seed=62), -5.0, HUGE)
-    M.add(tt, strings_chord(['D2', 'A2', 'D3'], L, 'vc', att=1.0, rel=2.5, dyn=dyn, seed=63), -4.0, HUGE)
-    M.add(tt, strings_chord(['D1', 'D2'], L, 'cb', att=1.0, rel=2.5, dyn=dyn, seed=64), -6.0, HUGE)
-    M.add(tt, brass_chord(['D3', 'F3', 'A3', 'D4'], L - 2, 'hn', att=0.9, rel=2.5, dyn=dyn, seed=65), -5.0, HUGE)
-    M.add(tt, brass_chord(['D2', 'A2'], L - 3, 'tbn', att=0.9, rel=2.5, dyn=dyn, seed=66), -8.0, HUGE)
-    M.add(tt, choir(['D3', 'A3', 'D4', 'F4', 'A4'], L, 'a', att=1.2, rel=3.0, dyn=dyn, seed=67), -3.0, HUGE)
-    M.add(tt, pan(timpani('D2', 1.0), 0) * 0.7071, -2.0, BIG)
-    timp_roll(M, tt + 0.15, tt + 2.2, 'D2', 0.6, 0.25, db=-9.0, seed=68)
-
-
-def _drift(M, T):
-    t0 = T['drift']  # 76
-    # ethereal pads
-    for (t, nts, d) in [(t0, ['D3', 'A3', 'E4', 'F4'], 6.8), (t0 + 6, ['Bb2', 'F3', 'A3', 'D4'], 6.8),
-                        (t0 + 12, ['F2', 'C3', 'G3', 'A3'], 6.8), (t0 + 18, ['C3', 'G3', 'D4', 'E4'], 4.2)]:
-        M.add(t, pad(nts, d, att=2.8, rel=3.0, cutoff=1300, seed=int(t), air=0.25), -12.0, HUGE)
-    M.add(t0, sub_drone('D2', 20.0, att=4, rel=3, seed=81, harm=0.1), -16.0, None)
-    grains(M, t0 + 0.5, T['ignition'] - 1.0, ['D6', 'F6', 'G6', 'A6', 'C7', 'D7', 'E6', 'A5'],
-           density=7.0, db=-6.0, seed=82)
-    # atom, softly: reticle tracking
-    leitmotif(M, T['lock2'], spacing=0.4, vel=0.55, db=-4.0, send=HUGE)
-    # sparse piano: theme fragment, high & far
-    frag = [(84.0, 'F5', 0.42, 1.6), (85.6, 'G5', 0.36, 0.7), (86.3, 'A5', 0.40, 0.8),
-            (87.1, 'Bb5', 0.46, 2.4), (89.5, 'A5', 0.36, 1.8),
-            (91.4, 'A5', 0.36, 1.0), (92.4, 'G5', 0.32, 0.6), (93.0, 'F5', 0.32, 1.0), (94.2, 'G5', 0.38, 3.0)]
-    for t, p, v, d in frag:
-        M.add(t, piano_note(p, v, d, seed=int(t)), 8.0, {'hall': 0.3, 'space': 0.75})
-        M.add(t, piano_note(n2m(p) - 24, v * 0.6, d, seed=int(t) + 1), 6.0, {'hall': 0.3, 'space': 0.7})
-    # build to the ignition
-    ti = T['ignition']  # 101
-    M.add(ti - 4.5, strings_chord(['C4', 'E4', 'G4', 'C5'], 4.4, 'vla', att=4.0, rel=0.3,
-                                  dyn=[(0, 0.2), (4.4, 1.0)], seed=91), -11.0, BIG)
-    M.add(ti - 4.0, choir(['C3', 'G3', 'E4', 'G4'], 3.9, 'u', att=3.5, rel=0.4, seed=92,
-                          morph=('a', [(0, 0), (3.9, 0.8)])), -12.0, BIG)
-    # IGNITION: first major colour (F major), bright voicing
-    dyn = [(0, 0.7), (0.5, 1.0), (4.5, 0.75)]
-    M.add(ti, strings_chord(['A4', 'C5', 'F5', 'A5'], 4.8, 'vln', att=0.35, rel=1.2, dyn=dyn, seed=93, bright=0.9), -5.0, BIG)
-    M.add(ti, strings_chord(['F3', 'C4', 'F4'], 4.8, 'vla', att=0.35, rel=1.2, dyn=dyn, seed=94), -7.0, BIG)
-    M.add(ti, strings_chord(['F2', 'C3'], 4.8, 'vc', att=0.35, rel=1.2, dyn=dyn, seed=95), -6.0, BIG)
-    M.add(ti, strings_chord(['F1'], 4.8, 'cb', att=0.35, rel=1.2, dyn=dyn, seed=96), -8.0, BIG)
-    M.add(ti, choir(['F3', 'C4', 'A4', 'C5'], 4.8, 'a', att=0.5, rel=1.5, dyn=dyn, seed=97), -7.0, BIG)
-    M.add(ti, brass_chord(['F3', 'A3', 'C4'], 4.0, 'hn', att=0.4, rel=1.5, seed=98), -10.0, BIG)
-    for i, p in enumerate(['F6', 'A6', 'C7', 'F7']):
-        M.add(ti + 0.12 + 0.11 * i, pan_st(celesta(p, 0.5, seed=i), -0.3 + 0.2 * i), -6.0, HUGE)
-    M.add(ti + 5.0, strings_chord(['C4', 'E4', 'G4', 'C5'], 2.0, 'vla', att=0.6, rel=1.0, seed=99), -9.0, BIG)
-    M.add(ti + 5.0, strings_chord(['C3', 'G3'], 2.0, 'vc', att=0.6, rel=1.0, seed=100), -9.0, BIG)
-    M.add(ti + 7.0, strings_chord(['Bb3', 'D4', 'F4', 'Bb4'], 2.2, 'vla', att=0.6, rel=1.2, seed=101), -10.0, BIG)
-    M.add(ti + 7.0, strings_chord(['Bb1', 'Bb2'], 2.2, 'vc', att=0.6, rel=1.2, seed=102), -10.0, BIG)
-    _young_earth(M, T)
-
-
-def _young_earth(M, T):
-    t0 = T['earth']  # 110
-    peak = T['sunrise']  # 117
-    bl = (peak - t0) / 3.0
-    bars = [(t0, 'Dm', bl), (t0 + bl, 'Bb', bl), (t0 + 2 * bl, 'C', bl), (peak, 'F', 3.0), (peak + 3.0, 'C', 2.2)]
-    for i, (t, ch, d) in enumerate(bars):
-        lvl = [-12, -10, -8, -3, -9][i]
-        att = 0.7 if i < 3 else 0.4
-        M.add(t, strings_chord(tones(ch, 'A4', 'A5'), d, 'vln', att=att, rel=1.4, seed=110 + i,
-                               bright=0.7), lvl, BIG)
-        M.add(t, strings_chord(tones(ch, 'D3', 'D4'), d, 'vla', att=att, rel=1.4, seed=120 + i), lvl - 1, BIG)
-        M.add(t, strings_chord([root(ch, 2), root(ch, 3)], d, 'vc', att=att, rel=1.4, seed=130 + i), lvl, BIG)
-        M.add(t, strings_chord([root(ch, 1)], d, 'cb', att=att, rel=1.4, seed=140 + i), lvl - 2, BIG)
-    beat = bl / 4
-    horn = [(0, 2 * beat, 'F3', 0.8), (2 * beat, beat, 'G3', 0.8), (3 * beat, beat, 'A3', 0.85),
-            (4 * beat, 3 * beat, 'Bb3', 0.9), (7 * beat, beat, 'A3', 0.8),
-            (8 * beat, 2 * beat, 'G3', 0.85), (10 * beat, beat, 'A3', 0.9), (11 * beat, beat, 'Bb3', 0.95),
-            (peak - t0, 3.0, 'C4', 1.0), (peak - t0 + 3.0, 1.8, 'A3', 0.75)]
-    M.add(t0, brass_line(horn, 'hn', rel=1.5, att=0.12, seed=150), -6.0, BIG)
-    M.add(peak, strings_line([(0, 1.0, 'A5', 0.9), (1.0, 2.0, 'C6', 1.0), (3.0, 2.0, 'A5', 0.8)], 'vln',
-                             rel=1.6, seed=151, bright=0.9), -6.0, BIG)
-    timp_roll(M, t0 + 2 * bl, peak - 0.05, 'C2', 0.15, 0.7, db=-7.0, seed=152)
-    M.add(peak, pan(timpani('F2', 0.95), 0) * 0.7071, -3.0, BIG)
-    cym_swell(M, peak, dur=2.3, db=-10.0, seed=153)
-    M.add(peak, pan(cymbal(5.0, seed=154), 0.3) * 0.7071, -16.0, BIG)
-
-
-def _ocean(M, T):
-    t0 = T['ocean']  # 122
-    for (t, nts, d) in [(t0, ['D3', 'A3', 'E4', 'F4'], 5.5), (t0 + 5.5, ['Bb2', 'F3', 'A3', 'D4'], 5.5),
-                        (t0 + 11, ['D3', 'A3', 'E4', 'F4', 'A4'], 3.6), (t0 + 14.5, ['C3', 'G3', 'E4'], 1.6)]:
-        M.add(t, strings_chord(nts, d, 'vla', att=2.0, rel=1.6, seed=int(t * 3), bright=0.3), -15.0, BIG)
-        M.add(t, pad(nts, d, att=2.0, rel=2.0, cutoff=1100, seed=int(t * 5)), -17.0, HUGE)
-    # the atom in the first cell: leitmotif above the water (free layer: not muffled)
-    leitmotif(M, T['lock3'], spacing=0.35, vel=0.6, db=-5.0, send=HUGE, layer='free')
-
-
-def _tree(M, T):
-    t0 = T['tree']  # 138
-    tc = T['night_cut']  # 151.6
-    # accelerando 96 -> 146 BPM
-    dur = tc - t0
-    ts = np.linspace(0, dur, 4000)
-    bpm = 96 * (146 / 96) ** (ts / dur)
-    beats = np.concatenate([[0], np.cumsum(bpm[1:] / 60 * np.diff(ts))])
-    nb = int(beats[-1] * 4)
-    chords = ['Dm', 'Bb', 'F', 'C']
-    k = 0
-    for s in range(nb):  # sixteenths
-        b16 = s / 4.0
-        t = t0 + float(np.interp(b16, beats, ts))
-        if t >= tc - 0.03:
+def _mind(M, T):
+    tm, pings, tw, tr = T['mind'], T['pings'], T['memory_region'], T['river']
+    grid = pings[1] - pings[0]
+    a0, a1 = T['attention']
+    d0, d1 = T['dive']
+    # low string drone underneath
+    dur = tw + 0.4 - tm
+    M.add(tm, strings_chord(['A1'], dur, 'cb', att=3.5, rel=1.4, seed=501, bright=0.2,
+                            dyn=[(0, 0.6), (dur, 1.0)]), -13.0, HALL)
+    M.add(tm + 1.0, strings_chord(['A2', 'E3'], dur - 1.0, 'vc', att=3.5, rel=1.4, seed=502, bright=0.25),
+          -17.0, HALL)
+    # the data pattern: tine plucks on the token grid, an additive process on Q
+    masks = [{0, 3}, {0, 2, 3, 5}, {0, 1, 2, 3, 5, 6}, set(range(7))]
+    s = 7
+    while True:
+        t = pings[0] + s * grid
+        if t > tw + 0.3:
             break
-        bar = int(b16 // 4)
-        ch = chords[bar % 4]
-        prog = (t - t0) / dur
-        tn = tones(ch, 'D4', 'D6')
-        arp = [0, 1, 2, 3, 4, 3, 2, 1]
+        c = (s - 7) // 7
+        k = s % 7
+        fadeout = float(np.clip((tw + 0.5 - t) / 1.6, 0.25, 1.0))
+        if k in masks[min(c, 3)]:
+            M.add(t, P(data_pluck(Q[k], (0.42 + 0.08 * min(c, 3)) * fadeout, seed=s), -0.4 + 0.8 * k / 6),
+                  -5.0, DATA)
+        if s % 2 == 0:
+            M.add(t, P(data_pluck('A3' if (s // 2) % 2 == 0 else 'E4', 0.35 * fadeout, seed=900 + s, t60=0.6),
+                       0.1), -9.0, DATA)
+        s += 1
+    # attention: bowed glass, 她 reaches for 好 起 來 (glides), then 嗎 reaches for everything
+    for k, (dt, p1) in enumerate([(0.0, 'A4'), (0.6, 'G4'), (1.2, 'C5')]):
+        t = a0 + dt
+        d = a1 + 0.4 - t
+        M.add(t, P(bowed_glass([(0, 'E5'), (0.45, 'E5'), (1.35, p1)], d, att=0.45, rel=1.6, seed=510 + k,
+                               dyn=[(0, 1.0), (d - 2.5, 1.0), (d, 0.55)]), -0.35 + 0.3 * k), -8.0, DATA)
+    tq = a0 + 2.5
+    M.add(tq, P(bowed_glass([(0, 'A4')], a1 + 0.5 - tq, att=0.4, rel=1.6, seed=520), 0.0), -9.0, DATA)
+    for k, p in enumerate(['E5', 'D5', 'G4', 'C5', 'A5']):
+        t = tq + 0.55 + 0.25 * k
+        M.add(t, P(bowed_glass([(0, 'A4'), (0.15, 'A4'), (0.9, p)], a1 + 0.5 - t, att=0.5, rel=1.6,
+                               seed=530 + k), -0.6 + 0.3 * k), -12.0, DATA)
+    # the region of memory lights up: a warm chord (F major 9), swelling through the dive into the river
+    d = tr + 0.6 - tw
+    dyn = [(0, 0.35), (1.2, 0.8), (3.0, 0.7), (d0 - tw, 0.72), (d - 0.4, 1.0), (d, 0.9)]
+    M.add(tw, strings_chord(['F1', 'F2'], d, 'cb', att=1.0, rel=1.2, seed=540, dyn=dyn), -10.0, BIG)
+    M.add(tw, strings_chord(['F2', 'C3'], d, 'vc', att=1.0, rel=1.2, seed=541, dyn=dyn), -11.0, BIG)
+    M.add(tw, strings_chord(['A3', 'E4', 'G4'], d, 'vla', att=1.2, rel=1.2, seed=542, dyn=dyn, bright=0.4),
+          -12.0, BIG)
+    M.add(tw + 0.3, strings_chord(['C5', 'E5'], d - 0.3, 'vln', att=1.5, rel=1.2, seed=543, dyn=dyn, bright=0.3),
+          -15.0, BIG)
+    M.add(tw + 0.2, choir(['F3', 'C4', 'A4'], d - 0.2, 'u', att=1.5, rel=1.2, seed=544, dyn=dyn), -14.0, HUGE)
+    for j, (p, v) in enumerate([('F2', 0.34), ('C3', 0.3), ('A3', 0.28), ('E4', 0.26), ('G4', 0.26)]):
+        pno(M, tw + 0.03 * j, p, v, 3.5, db=7.0, send=BIG, seed=j)
+
+
+# ----------------------------------------------------------------------------
+RIVER_CH = {'A': ('A1', ['A2', 'E3'], 'A', ['A2', 'E3', 'A3', 'C4', 'D4', 'E4']),
+            'F': ('F1', ['F2', 'C3'], 'F', ['F2', 'C3', 'A3', 'C4', 'E4', 'G4']),
+            'C': ('C2', ['C3', 'G3'], 'C', ['C3', 'G3', 'D4', 'E4', 'G4', 'A4']),
+            'G': ('G1', ['G2', 'D3'], 'G', ['G2', 'D3', 'A3', 'D4', 'E4', 'G4']),
+            'D': ('D2', ['D2', 'A2'], 'D', ['D3', 'A3', 'D4', 'E4', 'G4', 'A4'])}
+VA_VOICES = {'A': ['E3', 'A3', 'C4'], 'F': ['E3', 'A3', 'C4'], 'C': ['E3', 'G3', 'D4'], 'G': ['E3', 'G3', 'D4'],
+             'D': ['E3', 'A3', 'C4']}
+
+
+def _river(M, T):
+    t0 = T['river']                      # the pickup (她)
+    beat = (T['eras'][0] - (t0 + 1.0)) / 24.0   # 6 bars of 4 beats from the first downbeat to 70 s
+    b1 = t0 + beat
+    prog = ['A', 'F', 'C', 'G', 'A', 'F']
+    bars = [(b1 + 4 * beat * k, 4 * beat) for k in range(6)]
+    lvl = [0.62, 0.7, 0.78, 0.86, 1.0, 0.85]
+    dyn = [(0, 0.6), (8 * beat, 0.75), (16 * beat, 0.9), (17 * beat, 1.0), (22 * beat, 0.9), (24 * beat, 0.7),
+           (25.5 * beat, 0.35)]
+    # basses, cellos, violas: smooth legato harmony
+    voices(M, b1, bars, [[RIVER_CH[c][0] for c in prog]], 'cb', -9.0, BIG, 600, dyn=dyn, att=0.8)
+    voices(M, b1, bars, [[RIVER_CH[c][1][j] for c in prog] for j in range(2)], 'vc', -12.0, BIG, 610, dyn=dyn)
+    voices(M, b1, bars, [[VA_VOICES[c][j] for c in prog] for j in range(3)], 'vla', -15.0, BIG, 620, dyn=dyn,
+           bright=0.4)
+    # violins II: a high pentatonic shimmer in the last two bars
+    voices(M, bars[4][0], bars[4:], [['E5', 'E5'], ['A5', 'A5']], 'vln', -20.0, HUGE, 630, att=2.0,
+           dyn=[(0, 0.5), (4 * beat, 1.0), (8 * beat, 0.6)], bright=0.3)
+    # piano: flowing triplets (8th-note triplets), a river under the theme
+    shape = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 4), (7, 3), (8, 2), (9, 1), (10, 2), (11, 3)]
+    vels = [0.34, 0.22, 0.24, 0.28, 0.24, 0.26, 0.27, 0.22, 0.22, 0.25, 0.21, 0.23]
+    for k, (c, (tb, _)) in enumerate(zip(prog + ['D'], bars + [(b1 + 24 * beat, 4 * beat)])):
+        arp = RIVER_CH[c][3]
+        g = lvl[k] if k < 6 else 0.6
+        for i, j in shape:
+            t = tb + i * beat / 3
+            fadeout = 1.0 if k < 6 else max(0.0, 1 - i / 12) * 0.8
+            if fadeout <= 0.05:
+                continue
+            pno(M, t, arp[j], vels[i] * g * fadeout * 1.1, beat * 0.9, db=7.0, send=BIG, seed=k * 12 + i)
+    # the canon: the same question, entering again and again
+    V1 = motif(Q, t0, beat, 0.85)
+    line(M, 'str', V1, -6.0, BIG, 640, sec='vln', rel=1.6, att=0.18, bright=0.6, dyn=[(0, 0.85), (8, 1.0)])
+    line(M, 'str', motif(Q, t0, beat, 0.8, octv=-1), -9.0, BIG, 641, sec='vc', rel=1.6, att=0.2, bright=0.5)
+    for i, (t, d, mm, v) in enumerate(motif(Q, t0 + 5 * beat, beat, 0.5, octv=1)):     # the card: piano
+        pno(M, t, mm, v, d, db=9.0, send=BIG, seed=40 + i)
+        pno(M, t + 0.012, mm - 12, v * 0.75, d, db=9.0, send=BIG, seed=50 + i)
+    V3 = motif(pshift(Q, 2), t0 + 10 * beat, beat, 0.8)
+    line(M, 'str', V3, -8.0, BIG, 642, sec='vln', rel=1.6, att=0.2, bright=0.65)
+    V4 = motif(Q, t0 + 15 * beat, beat, 0.9, octv=-2)
+    line(M, 'str', V4, -6.0, BIG, 643, sec='vc', rel=1.8, att=0.22, bright=0.6)
+    V5 = motif(Q, t0 + 20 * beat, beat, 0.6, octv=1, last=4.0)
+    line(M, 'str', V5, -14.0, HUGE, 644, sec='vln', rel=2.5, att=0.4, bright=0.35,
+         dyn=[(0, 1.0), (6, 0.9), (11, 0.4)])
+
+
+# ----------------------------------------------------------------------------
+def _upstream(M, T):
+    e = T['eras']
+    # 70-78: the strings thin out (D, then A)
+    M.add(e[0], strings_chord(['D2', 'A2'], e[1] - e[0] + 0.6, 'vc', att=1.0, rel=2.2, seed=700,
+                              dyn=[(0, 0.85), (4.6, 0.55)]), -13.0, HALL)
+    M.add(e[0], strings_chord(['D1'], e[1] - e[0] + 0.6, 'cb', att=1.0, rel=2.2, seed=701,
+                              dyn=[(0, 0.8), (4.6, 0.5)]), -13.0, HALL)
+    M.add(e[0], strings_chord(['E3', 'G3', 'C4'], e[1] - e[0], 'vla', att=1.0, rel=2.4, seed=702,
+                              dyn=[(0, 0.8), (4.0, 0.4)], bright=0.3), -17.0, HALL)
+    M.add(e[1], strings_chord(['A2', 'E3'], e[3] - e[1] + 1.0, 'vc', att=2.0, rel=2.5, seed=703,
+                              dyn=[(0, 0.7), (4, 0.6), (8.5, 0.3)], bright=0.25), -15.0, HALL)
+    M.add(e[1], strings_chord(['A1'], e[4] - e[1], 'cb', att=2.0, rel=1.5, seed=704,
+                              dyn=[(0, 0.7), (8, 0.55), (e[4] - e[1], 0.5)]), -14.0, HALL)
+    # 78-86: one bowed voice remembers the question (older, sliding)
+    off = [0.4, 1.2, 2.9, 3.7, 4.55, 5.8, 6.25]
+    dur = [0.8, 1.7, 0.8, 0.85, 1.25, 0.45, 2.4]
+    notes = timed(Q, [e[2] + o for o in off], dur, 0.8, octv=-1)
+    line(M, 'bow', notes, -8.0, {'hall': 0.35, 'space': 0.3}, 710, rel=1.4, glide=0.12, nasal=0.8,
+         dyn=[(0, 0.8), (3, 1.0), (7.5, 0.7)], pan_c=-0.1)
+    # 86 -> the crack: a single low drone (gated at the crack)
+    with M.layer('pre'):
+        d = T['crack'] - e[4] + 0.3
+        M.add(e[4], strings_chord(['A1'], d, 'cb', att=3.0, rel=0.3, seed=720, bright=0.15, vib_scale=0.3,
+                                  dyn=[(0, 0.6), (8, 0.8), (T['rod'] - e[4], 0.9), (d, 1.0)]), -12.0, HALL)
+        M.add(e[4] + 4.0, solo_bowed_line([(0, d - 4.0, 'A2', 0.5)], rel=0.3, att=3.0, nasal=0.4, vib_depth=4.0,
+                                          seed=721), -19.0, {'hall': 0.3})
+
+
+# ----------------------------------------------------------------------------
+def _bone(M, T):
+    tr, tc = T['rod'], T['crack']
+    cards = T['bone_cards']           # [106, 113 (Fu Hao, human), 121, 128]
+    fu = T['fuhao']
+    with M.layer('pre'):              # the heat: a thin high harmonic rising with the hiss
+        M.add(tr, strings_chord(['A5'], tc - tr + 0.2, 'vln', att=2.2, rel=0.1, seed=730, bright=0.15,
+                                vib_scale=0.15, dyn=[(0, 0.3), (tc - tr, 1.0)]), -25.0, HALL)
+    # silence after the crack; then the ancient voices
+    t1 = tc + 2.1
+    anc = {'hall': 0.35, 'space': 0.45}
+    M.add(t1, P(stone_chime('A3', 0.6, seed=731), -0.1), -4.0, anc)
+    d = cards[3] + 3.0 - t1
+    M.add(t1 + 0.4, solo_bowed_line([(0, d, 'A2', 0.5)], rel=2.0, att=3.5, nasal=0.35, vib_depth=3.0, seed=732,
+                                    dyn=[(0, 0.7), (d * 0.5, 1.0), (d, 0.6)]), -19.0, {'hall': 0.3, 'space': 0.3})
+    M.add(t1 + 1.0, strings_chord(['A1'], d - 0.6, 'cb', att=4.0, rel=2.0, seed=733, bright=0.1, vib_scale=0.3),
+          -22.0, HALL)
+    xa = t1 + 1.0
+    line(M, 'xun', timed(['A4', 'C5', 'D5', 'E5', 'D5'], [xa, xa + 1.0, xa + 1.6, xa + 3.0, xa + 3.5],
+                         [1.0, 0.6, 1.4, 0.5, 1.1], 0.8), -8.0, anc, 740, pan_c=0.2)
+    # 婦好: the human voice carries the question
+    M.add(fu, P(stone_chime('D3', 0.45, seed=741), 0.1), -8.0, anc)
+    b = 0.75
+    hum = timed(Q, [fu + 0.2 + b * x for x in (0, 1, 3, 4, 5, 6.5, 7)], [b, 2 * b, b, b, 1.5 * b, 0.5 * b, 3.0],
+                0.8, octv=-1)
+    line(M, 'voice', hum, -5.0, {'hall': 0.35, 'space': 0.4}, 742, rel=1.6, glide=0.09, pan_c=-0.05)
+    # he carved the question into the shell: the bow answers, the xun far above
+    tc3 = cards[2]
+    M.add(tc3, P(stone_chime('A2', 0.5, seed=743), -0.15), -6.0, anc)
+    bow = timed(['G3', 'A3', 'C4', 'D4', 'E4', 'D4', 'A3'],
+                [tc3 + x for x in (0.6, 1.3, 2.0, 3.2, 3.8, 5.4, 6.0)], [0.7, 0.7, 1.2, 0.6, 1.6, 0.6, 2.4], 0.75)
+    line(M, 'bow', bow, -9.0, anc, 744, rel=1.5, glide=0.13, nasal=1.0, pan_c=0.15)
+    line(M, 'xun', timed(['E5', 'D5'], [tc3 + 3.8, tc3 + 5.4], [1.6, 2.2], 0.5), -16.0, HUGE, 745, pan_c=-0.3)
+    M.add(cards[3], P(stone_chime('E3', 0.4, seed=746), 0.05), -9.0, anc)
+
+
+# ----------------------------------------------------------------------------
+TRIGRAMS = [7, 6, 5, 4, 3, 2, 1, 0]         # 乾 兌 離 震 巽 坎 艮 坤 (Fuxi order, yang = 1, bottom line first)
+
+
+def _lineage(M, T):
+    g0, g1 = T['yinyang']                   # 131.5, 137
+    tb = T['fuxi']                          # 140.0
+    s16 = 0.125
+    bell_send = {'hall': 0.3, 'space': 0.45}
+    # under it all: a low A that grows toward the bloom
+    d = tb - T['lineage'] + 0.3
+    M.add(T['lineage'], strings_chord(['A1', 'A2'], d, 'cb', att=3.0, rel=0.4, seed=800,
+                                      dyn=[(0, 0.4), (d * 0.6, 0.7), (d, 0.9)]), -13.0, HALL)
+    # yin and yang: two bronze voices (low A, high E), trigram by trigram
+    for k, v in enumerate(TRIGRAMS):
+        for j in range(3):
+            bit = (v >> (2 - j)) & 1
+            t = g0 + (k * 3 + j) * s16
+            M.add(t, P(bronze_bell('E5' if bit else 'A4', 0.75 if j == 0 else 0.55, seed=k * 3 + j, decay=0.7),
+                       0.25 if bit else -0.25), -8.0, bell_send)
+    # hexagrams: accelerating into a shimmering cloud
+    ta = g0 + 24 * s16
+    t, k = ta, 0
+    while t < tb - 0.05:
+        u = (t - ta) / (tb - ta)
+        h = 63 - (k // 6) % 64
+        j = k % 6
+        bit = (h >> (5 - j)) & 1
+        v = (0.45 + 0.35 * u) * (1.15 if j == 0 else 1.0)
+        M.add(t, P(bronze_bell('E5' if bit else 'A4', v, seed=40 + k % 23, decay=0.55),
+                   (0.3 if bit else -0.3) * (1 - 0.5 * u)), -9.0 + 2 * u, bell_send)
+        if j == 0 and u > 0.25:
+            M.add(t, P(bronze_bell('A5' if bit else 'A3', v * 0.7, seed=90 + k % 11, decay=0.5), 0.0), -14.0,
+                  bell_send)
+        t += s16 / (1 + 2.2 * u ** 1.3)
         k += 1
-        # violas: rising arpeggio from the start
-        M.add(t, strings_spicc(tn[arp[s % 8] % len(tn)], 0.45 + 0.4 * prog, dur=0.13, sec='vla', seed=k),
-              -8.0 + 3 * prog, HALL)
-        # violins an octave up from bar 2
-        if bar >= 2:
-            M.add(t, strings_spicc(tn[arp[(s + 2) % 8] % len(tn)] + 12, 0.4 + 0.45 * prog, dur=0.11,
-                                   sec='vln', seed=k + 7000), -10.0 + 4 * prog, HALL)
-        if s % 2 == 0:  # eighths: cello roots + pulse
-            r2 = root(ch, 2)
-            if bar >= 1:
-                M.add(t, strings_spicc(r2 + (12 if (s // 2) % 2 else 0), 0.55 + 0.4 * prog, dur=0.2,
-                                       sec='vc', seed=k + 9000), -4.0 + 2 * prog, HALL)
-            M.add(t, pulse_tick(r2 + 24, 0.5 + 0.5 * prog, seed=k), -6.0 + 3 * prog, HALL)
-        if s % 4 == 0 and bar >= 3:  # timpani on beats
-            M.add(t, pan(timpani('D2' if ch in ('Dm', 'Bb') else 'A1', 0.45 + 0.4 * prog, variant=s), 0) * 0.7071,
-                  -6.0, HALL)
-    # swells
-    M.add(t0 + 6.5, strings_chord(['D5', 'F5', 'A5', 'D6'], dur - 6.5, 'vln', att=dur - 7, rel=0.05,
-                                  dyn=[(0, 0.4), (dur - 6.5, 1.0)], seed=171, bright=0.9), -9.0, BIG)
-    M.add(t0 + 8.0, choir(['D3', 'A3', 'D4', 'F4', 'A4'], dur - 8.0, 'a', att=dur - 8.5, rel=0.05, seed=172,
-                          dyn=[(0, 0.3), (dur - 8, 1.0)]), -8.0, BIG)
-    M.add(t0 + 9.0, brass_chord(['D3', 'A3', 'D4', 'F4'], dur - 9.0, 'hn', att=dur - 9.5, rel=0.05, seed=173,
-                                dyn=[(0, 0.3), (dur - 9, 1.0)]), -8.0, BIG)
-    M.add(t0 + 9.0, brass_chord(['D2', 'A2'], dur - 9.0, 'tbn', att=dur - 9.5, rel=0.05, seed=174,
-                                dyn=[(0, 0.3), (dur - 9, 1.0)]), -9.0, BIG)
-    timp_roll(M, tc - 2.2, tc - 0.04, 'D2', 0.3, 0.95, rate=16, db=-5.0, seed=175)
-    cym_swell(M, tc, dur=2.4, db=-9.0, seed=176)
+    # the approach (G sus) and the bloom: strings and choir, majestic, C major 6/9
+    tp = g1 + 0.5
+    dp = tb - tp
+    up = [(0, 0.2), (dp, 1.0)]
+    M.add(tp, strings_chord(['G2', 'D3'], dp, 'vc', att=dp * 0.8, rel=0.15, seed=810, dyn=up), -10.0, BIG)
+    M.add(tp, strings_chord(['G3', 'A3', 'D4'], dp, 'vla', att=dp * 0.8, rel=0.15, seed=811, dyn=up), -12.0, BIG)
+    M.add(tp + 0.5, choir(['G3', 'D4', 'A4'], dp - 0.5, 'u', att=dp * 0.7, rel=0.15, seed=812, dyn=up), -12.0, HUGE)
+    db_ = T['flip'] + 1.6 - tb
+    dyn = [(0, 0.6), (0.7, 1.0), (2.2, 0.9), (db_, 0.55)]
+    M.add(tb, strings_chord(['C1', 'C2'], db_, 'cb', att=0.35, rel=2.5, seed=820, dyn=dyn), -6.0, HUGE)
+    M.add(tb, strings_chord(['C2', 'G2', 'C3'], db_, 'vc', att=0.35, rel=2.5, seed=821, dyn=dyn), -7.0, HUGE)
+    M.add(tb, strings_chord(['G3', 'C4', 'E4'], db_, 'vla', att=0.4, rel=2.5, seed=822, dyn=dyn), -8.0, HUGE)
+    M.add(tb, strings_chord(['D5', 'E5', 'G5', 'A5'], db_, 'vln', att=0.45, rel=2.5, seed=823, dyn=dyn,
+                            bright=0.8), -8.0, HUGE)
+    M.add(tb, choir(['C3', 'G3', 'E4', 'A4', 'D5'], db_, 'a', att=0.5, rel=3.0, seed=824, dyn=dyn), -4.0, HUGE)
+    for j, (p, v) in enumerate([('C1', 0.62), ('C2', 0.58), ('G2', 0.5), ('E3', 0.42), ('D4', 0.38)]):
+        pno(M, tb + 0.012 * j, p, v, 4.0, db=6.0, send=HUGE, seed=60 + j)
+    M.add(tb, P(bronze_bell('C4', 0.9, seed=830, decay=1.6), -0.1), -6.0, HUGE)
+    M.add(tb, P(bronze_bell('C5', 0.7, seed=831, decay=1.4), 0.15), -10.0, HUGE)
+    # Leibniz: harpsichord clockwork, the head of Q (5-4-1-7) falling through the circle of fifths
+    tl = T['leibniz']
+    beat = 0.5
+    scale = [57, 59, 60, 62, 64, 65, 67]          # A minor from A3; diatonic index i -> midi
+    deg = lambda i: scale[i % 7] + 12 * (i // 7)
+    roots = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6}
+    chords = ['A', 'D', 'G', 'C', 'F', 'B', 'E', 'A', 'D', 'E']
+    nb = int(round((T['tape'] - tl) / beat))
+    for b in range(nb):
+        c = chords[b % len(chords)]
+        r0 = roots[c]
+        ti = r0 + 4
+        while deg(ti) > 76:
+            ti -= 7
+        while deg(ti) < 65:
+            ti += 7
+        for i, dg in enumerate([ti, ti - 1, ti - 4, ti - 5]):
+            t = tl + b * beat + i * s16
+            M.add(t, P(harpsichord(deg(dg), 0.75 if i == 0 else 0.62, 0.11, seed=b * 4 + i, four=0.35), 0.2),
+                  1.0, ROOMY)
+        lo = deg(r0 - 7)
+        if lo > 50:
+            lo -= 12
+        for i, mm in enumerate([lo, lo + 12]):
+            M.add(tl + b * beat + i * 2 * s16, P(harpsichord(mm, 0.6, 0.22, seed=300 + b * 2 + i), -0.25), 1.0,
+                  ROOMY)
+    # the binary goes to paper tape: two-tone pulses accelerate into electronic precision
+    tt0, tc = T['tape'], T['circuits']
+    bits = ''.join(f'{x:08b}' for x in '她會好起來嗎？'.encode('utf-8'))
+    t, k = tt0, 0
+    while t < tc - 0.01:
+        u = (t - tt0) / (tc - tt0)
+        bit = bits[k % len(bits)] == '1'
+        M.add(t, P(blip('E5' if bit else 'A4', 0.55 + 0.2 * u, 0.05 - 0.025 * u, 'square', 2600 + 2000 * u,
+                        seed=k), 0.35 if k % 2 else -0.35), -5.0, ROOMY)
+        t += s16 / (1 + 3.0 * u)
+        k += 1
+    # circuits: a precise arpeggiator, a soft pulse below, strings holding the harmony
+    arps = {'A': ['A3', 'C4', 'E4', 'A4', 'C5', 'E5'], 'F': ['F3', 'A3', 'C4', 'E4', 'A4', 'C5'],
+            'C': ['C4', 'E4', 'G4', 'C5', 'D5', 'E5'], 'G': ['G3', 'D4', 'G4', 'A4', 'D5', 'E5']}
+    shape = [0, 1, 2, 3, 4, 5, 4, 3]
+    tmind = T['mind_back']
+    trush = T['rush']
+    seq = ['A', 'F', 'C', 'G']
+    t, k = tc, 0
+    while t < trush - 0.01:
+        bar = int((t - tc) / (4 * beat))
+        c = seq[bar % 4]
+        u = (t - tc) / (trush - tc)
+        M.add(t, P(blip(arps[c][shape[k % 8]], 0.6 + 0.25 * u, 0.07, 'saw', 1400 + 2600 * u, seed=500 + k),
+                   0.3 * np.sin(k * 0.7)), -8.0 + 2 * u, ROOMY)
+        if k % 4 == 0:
+            rt = {'A': 'A1', 'F': 'F1', 'C': 'C2', 'G': 'G1'}[c]
+            M.add(t, P(_soft_kick(rt, 0.6 + 0.3 * u), 0.0), -4.0, {'room': 0.1})
+        t += s16
+        k += 1
+    pads = [(tc + 2 * beat * 4 * i, c) for i, c in enumerate(['A', 'F', 'C', 'G', 'A', 'F'])]
+    bars = [(t, 4 * beat) for t, _ in pads if t < trush]
+    prog = [c for t, c in pads if t < trush]
+    dyn = [(0, 0.4), (trush - tc, 1.0)]
+    voices(M, tc, bars, [[RIVER_CH[c][1][0] for c in prog], [RIVER_CH[c][1][1] for c in prog]], 'vc', -12.0,
+           BIG, 840, dyn=dyn)
+    voices(M, tc, bars, [[VA_VOICES[c][j] for c in prog] for j in range(3)], 'vla', -15.0, BIG, 845, dyn=dyn)
+    # back into the mind: the seven glass tokens again, then the build
+    for i, p in enumerate(['E6', 'D6', 'A5', 'G5', 'C6', 'A5', 'D6']):
+        M.add(tmind + 0.25 * i, P(glass_ping(p, 0.8, seed=860 + i, t60=1.2, click=0.4), -0.45 + 0.15 * i), -5.0,
+              DATA)
+    tbd = T['build']
+    M.add(tbd, choir(['A3', 'E4', 'A4'], trush - tbd, 'u', att=trush - tbd - 0.5, rel=0.3, seed=870,
+                     dyn=[(0, 0.3), (trush - tbd, 1.0)], morph=('a', [(0, 0), (trush - tbd, 0.8)])), -10.0, HUGE)
+    M.add(tbd, strings_chord(['E5', 'A5'], trush - tbd, 'vln', att=trush - tbd - 0.5, rel=0.3, seed=871,
+                             dyn=[(0, 0.3), (trush - tbd, 1.0)], bright=0.7), -11.0, BIG)
 
 
-def _night(M, T):
-    t1 = T['piano_theme']  # 154
-    tl = T['lock4']  # 167
-    bar = (tl - t1) / 4.0  # 3.25 s
-    beat = bar / 4
-    chords = ['Dm', 'Bb', 'F', 'C']
-    # phrase A (melody one octave up, intimate)
-    A = shift(theme(THEME_A, beat, octv=1, vel=0.5), t1)
-    B = shift(theme(THEME_B, beat, octv=1, vel=0.52, accent_leap=0.12), tl)
-    mel = A + B + [(tl + 4 * bar, 2 * bar, n2m('D5'), 0.46)]
-    for i, (t, d, m, v) in enumerate(mel):
-        rub = 0.012 * np.sin(i * 1.7)
-        M.add(t + rub, piano_note(m, v, d * 0.98, seed=i), 9.0, {'hall': 0.35, 'space': 0.35})
-    # left hand
-    lh_chords = chords + chords + ['Dm', 'Bb']
-    for b, ch in enumerate(lh_chords):
-        tb = t1 + b * bar
-        r2 = root(ch, 2)
-        fifth = r2 + 7
-        third = tones(ch, n2m('A3'), n2m('A4'))[0]
-        if b < 4:  # phrase A: half notes, root + fifth
-            for h in range(2):
-                M.add(tb + h * 2 * beat, piano_note(r2, 0.3 - 0.04 * h, 2 * beat, seed=b * 2 + h), 9.0,
-                      {'hall': 0.35, 'space': 0.3})
-                M.add(tb + h * 2 * beat + 0.02, piano_note(fifth + 12 * (h == 1), 0.24, 2 * beat, seed=b * 2 + h + 50),
-                      9.0, {'hall': 0.35, 'space': 0.3})
-        else:  # phrase B: flowing 8ths
-            pat = [r2, fifth, r2 + 12, third, fifth + 12, third, r2 + 12, fifth]
-            for i, p in enumerate(pat):
-                if b >= 8 and i >= 4 and b == 9:
-                    break
-                v = [0.32, 0.22, 0.24, 0.22, 0.26, 0.22, 0.24, 0.2][i] * (0.85 if b >= 8 else 1.0)
-                M.add(tb + i * beat / 2, piano_note(p, v, beat * (2.0 - i / 8 * 2.0) + 0.2, seed=b * 9 + i), 9.0,
-                      {'hall': 0.35, 'space': 0.3})
-    # the leitmotif woven into the piano (same three notes) as the reticle finds the child's hand
-    for i, p in enumerate(['D6', 'A6', 'E7']):
-        M.add(tl + 0.2 + i * 0.45, piano_note(p, 0.36 - 0.03 * i, 2.5, seed=40 + i), 9.0, {'hall': 0.3, 'space': 0.6})
-    leitmotif(M, tl + 0.2, spacing=0.45, vel=0.3, db=-14.0, send=HUGE)
-    # final fading chord of the lifetime (Bb add9), then the heartbeat stops
-    tb = t1 + 9 * bar
-    M.add(tb + 0.3, piano_note('C6', 0.22, 2.0, seed=91), 9.0, {'hall': 0.35, 'space': 0.5})
-    M.add(tb + 0.9, piano_note('D5', 0.2, 1.6, seed=92), 9.0, {'hall': 0.35, 'space': 0.5})
-    # strings swell beneath the lifetime (177 -> 186)
-    th = T['heart']  # 177
-    ts = T['heart_stop']  # 186
-    for t, nts, d in [(176.75, ['C3', 'G3', 'E4'], 3.25), (180.0, ['D3', 'A3', 'F4', 'A4'], 3.25),
-                      (183.25, ['Bb2', 'F3', 'D4', 'C5'], ts - 183.25 - 0.25)]:
-        lv = float(np.interp(t, [176.75, 180, 183.25], [-17, -12, -14]))
-        M.add(t, strings_chord(nts, d, 'vla', att=1.6, rel=0.4 if t > 183 else 1.4, seed=int(t),
-                               dyn=None if t < 183 else [(0, 1.0), (d, 0.25)]), lv, BIG)
-        M.add(t, strings_chord([nts[0], nts[1]], d, 'vc', att=1.6, rel=0.4 if t > 183 else 1.4, seed=int(t) + 1,
-                               dyn=None if t < 183 else [(0, 1.0), (d, 0.25)]), lv - 2, BIG)
-    # one bar of silence, then a single high violin harmonic
-    th2 = T['harmonic']  # 187
-    M.add(th2, violin_harmonic('A6', 6.0, seed=5), 0.0, {'hall': 0.3, 'space': 0.6}, layer='free')
-    # choir 'ooh' rising as the particles lift to the stars
-    M.add(th2 + 0.4, choir(['D4', 'F4', 'A4'], 3.6, 'u', att=3.0, rel=1.4, seed=193,
-                           dyn=[(0, 0.4), (3.6, 1.0)]), -13.0, HUGE, layer='free')
-    M.add(th2 + 1.8, choir(['D5'], 2.2, 'u', att=2.0, rel=1.4, seed=194, dyn=[(0, 0.4), (2.2, 1.0)]), -18.0, HUGE,
-          layer='free')
+def _soft_kick(pitch, vel):
+    f0 = float(mtof(n2m(pitch)))
+    n = ns(0.5)
+    t = tvec(n)
+    f = f0 * (1 + 1.5 * np.exp(-t / 0.02))
+    y = np.sin(TWO_PI * np.cumsum(f) / SR) * np.exp(-t / 0.16) * np.minimum(t / 0.002, 1)
+    return fade(lp(y, 600) * 0.25 * vel, 0, 0.05)
 
 
-def _return(M, T):
-    t0 = T['act4']  # 191
-    tc = T['climax']  # 207
-    bar = (tc - t0) / 4.0  # 4 s
-    beat = bar / 4
-    s8 = beat / 2  # 0.5
-    chords = ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'F', 'C']
-    acc = [1, .55, .7, .95, .55, .7, .9, .65]
-    octs = [0, 0, 12, 0, 0, 12, 0, 12]
+# ----------------------------------------------------------------------------
+def _rush(M, T):
+    t0, tc = T['rush'], T['answer']
+    D = tc - t0
+    # tempo map: 120 -> 184 bpm (exponential)
+    ts = np.linspace(0, D, 4000)
+    bpm = 120.0 * (184.0 / 120.0) ** (ts / D)
+    beats = np.concatenate([[0], np.cumsum(bpm[1:] / 60.0 * np.diff(ts))])
+    tb = lambda b: t0 + float(np.interp(b, beats, ts))
+    nbeats = beats[-1]
+    prog = ['A', 'F', 'C', 'G', 'A', 'F', 'G', 'E', 'E']
+    roots = {'A': 'A1', 'F': 'F1', 'C': 'C2', 'G': 'G1', 'E': 'E1'}
+    hi = {'A': ['A4', 'C5', 'E5', 'A5'], 'F': ['A4', 'C5', 'F5', 'A5'], 'C': ['G4', 'C5', 'E5', 'G5'],
+          'G': ['G4', 'B4', 'D5', 'G5'], 'E': ['G#4', 'B4', 'E5', 'G#5']}
     k = 0
-    for b, ch in enumerate(chords):
-        tb = t0 + b * bar
-        prog = b / 7
-        r2 = root(ch, 2)
-        lvl = [0.55, 0.62, 0.72, 0.85, 1.0, 1.0, 1.0, 0.9][b]
-        # 8ths at 0.25 s (120bpm feel) celli/basses ostinato
-        for i in range(16):
-            t = tb + i * 0.25
-            v = acc[i % 8] * lvl
-            k += 1
-            M.add(t, strings_spicc(r2 + 12 + octs[i % 8], v, dur=0.2, sec='vc', seed=k + 20000), -1.0, HALL)
-            M.add(t, strings_spicc(r2 + octs[i % 8], v, dur=0.22, sec='cb', seed=k + 21000), -4.0, HALL)
-            if b >= 2:
-                vt = tones(ch, 'D4', 'D5')[:3]
-                M.add(t, strings_spicc(vt[[0, 1, 2, 1][i % 4]], v * 0.8, dur=0.16, sec='vla', seed=k + 22000),
-                      -6.0, HALL)
-        # taiko
-        if b < 2:
-            pat = [(0, 0.75), (6, 0.55), (8, 0.7), (14, 0.5)]
-        elif b < 4:
-            pat = [(0, 0.95), (3, 0.5), (6, 0.7), (8, 0.9), (10, 0.5), (11, 0.6), (12, 0.75), (14, 0.65)]
-        elif b < 7:
-            pat = [(0, 1.0), (3, 0.6), (4, .5), (6, 0.8), (8, 1.0), (10, .6), (11, .7), (12, .85), (13, .5),
-                   (14, .8), (15, .6)]
-        else:
-            pat = [(0, 0.95), (6, 0.6), (8, 0.7)]
-        for pos, v in pat:
-            M.add(tb + pos * 0.25, pan(taiko(v, 'o', pos + b), 0.1 * ((pos % 3) - 1)) * 0.7071,
-                  -7.0 if b >= 4 else -6.0, HALL)
-            if b >= 2 and pos % 4 != 0:
-                M.add(tb + pos * 0.25, pan(taiko(v * 0.7, 'm', pos), 0.35) * 0.7071, -9.0, HALL)
-        # sustained string chords
-        if b < 4:
-            M.add(tb, strings_chord(tones(ch, 'A3', 'A4'), bar, 'vla', att=0.8, rel=0.8, seed=230 + b),
-                  -12.0 + 2.5 * b, BIG)
-            if b >= 1:
-                M.add(tb, strings_chord(tones(ch, 'A4', 'D6'), bar, 'vln', att=0.8, rel=0.8, seed=240 + b,
-                                        bright=0.7, trem=0.5 if b == 3 else 0.0), -14.0 + 2.5 * b, BIG)
-            if b >= 1:
-                M.add(tb, choir(tones(ch, 'D3', 'D4'), bar, 'u' if b < 2 else 'a', att=1.0, rel=0.8,
-                                seed=250 + b), -13.0 + 2 * b, BIG)
-            if b >= 2:
-                M.add(tb, brass_chord([r2, r2 + 7], bar, 'tbn', att=0.6, rel=0.6, seed=260 + b,
-                                      dyn=[(0, 0.6), (bar, 0.9 if b == 2 else 1.0)]), -10.0 + 2 * (b - 2), BIG)
-        else:
-            dl = -2.5 if b < 7 else -6.5
-            M.add(tb, strings_chord(tones(ch, 'A3', 'A4'), bar, 'vla', att=0.3, rel=1.2, seed=330 + b), -4.0 + dl, BIG)
-            M.add(tb, strings_chord(tones(ch, 'D4', 'A5')[-4:], bar, 'vln', att=0.3, rel=1.2, seed=340 + b,
-                                    bright=0.8), -6.0 + dl, BIG)
-            M.add(tb, strings_chord([r2 - 12, r2], bar, 'cb', att=0.3, rel=1.2, seed=345 + b), -5.0 + dl, BIG)
-            M.add(tb, choir(tones(ch, 'D3', 'A4'), bar, 'a', att=0.5, rel=1.6, seed=350 + b), -3.0 + dl, HUGE)
-            M.add(tb, brass_chord(tones(ch, 'D3', 'D4'), bar, 'hn', att=0.3, rel=1.2, seed=360 + b), -6.0 + dl, BIG)
-            M.add(tb, brass_chord([r2, r2 + 7, r2 + 12], bar, 'tbn', att=0.2, rel=1.2, seed=370 + b), -5.0 + dl, BIG)
-            M.add(tb, brass_chord([r2 - 12], bar, 'tuba', att=0.2, rel=1.2, seed=375 + b), -7.0 + dl, BIG)
-            tp = {'Dm': 'D2', 'Bb': 'A1', 'F': 'F2', 'C': 'C2'}[ch]
-            M.add(tb, pan(timpani(tp, 1.0 if b < 7 else 0.7), 0) * 0.7071, -5.0, BIG)
-    # melody: phrase A in celli + horns (191-207), phrase B soaring at the climax (207-223)
-    A = theme(THEME_A, beat, octv=-1, vel=0.85)
-    M.add(t0, strings_line(A, 'vc', rel=1.0, seed=300, bright=0.8,
-                           dyn=[(0, 0.75), (16, 1.0)]), -1.0, BIG)
-    M.add(t0 + 2 * bar, strings_line(shift(theme(THEME_A[5:], beat, octv=0, vel=0.85), -2 * bar), 'vln', rel=1.0,
-                                     seed=303, bright=0.8), -5.0, BIG)
-    M.add(t0, brass_line(A, 'hn', rel=1.0, seed=301, dyn=[(0, 0.6), (8, 0.8), (16, 1.0)]), -6.0, BIG)
-    # build into the climax
-    timp_roll(M, tc - 2.0, tc - 0.04, 'D2', 0.25, 0.95, rate=15, db=-4.0, seed=310)
-    cym_swell(M, tc, dur=3.0, db=-6.0, seed=311)
-    for i in range(8):  # small taiko fill
-        M.add(tc - 1.0 + i * 0.125, pan(taiko(0.5 + 0.06 * i, 'm', i), 0.3 - 0.08 * i) * 0.7071, -6.0, HALL)
-    M.add(tc - 4.0, brass_chord(['C3', 'G3', 'C4', 'E4'], 3.95, 'hn', att=3.6, rel=0.05, seed=312,
-                                dyn=[(0, 0.3), (3.95, 1.0)]), -6.0, BIG)
-    # CLIMAX
-    M.add(tc, braam(['D1', 'D2', 'A2'], 6.0, seed=320, decay=2.5, peak_fc=3000, drive=2.5), -11.0, HUGE)
-    M.add(tc, pan(cymbal(6.0, seed=321), -0.3) * 0.7071, -8.0, BIG)
-    Bm = theme(THEME_B, beat, octv=1, vel=0.95, accent_leap=0.05) + [(16 * beat, 3.0, n2m('D5'), 0.75)]
-    dynB = [(0, 0.85), (4, 1.0), (12, 1.0), (16, 0.75), (19, 0.4)]
-    M.add(tc, strings_line(Bm, 'vln', rel=2.0, seed=322, bright=1.0, dyn=dynB, octaves=(0, -1)), -1.0, HUGE)
-    M.add(tc, choir_line(Bm, 'a', rel=2.0, seed=323, dyn=dynB), -3.0, HUGE)
-    M.add(tc, brass_line(theme(THEME_B, beat, octv=0, vel=0.95), 'hn', rel=1.5, seed=324, dyn=dynB), -2.0, BIG)
-    M.add(tc + bar, brass_line(shift(theme(THEME_B[3:], beat, octv=0, vel=0.9), -bar), 'tpt', rel=1.5, seed=325,
-                               dyn=[(0, 0.8), (3, 1.0), (10, 0.7)]), -11.0, BIG)
-    # the atom, tracked through the fire: bells over the full orchestra
-    leitmotif(M, T['lock5'], spacing=0.35, vel=1.0, db=1.0, send=HUGE)
+    s = 0
+    while True:
+        b = s / 4.0
+        if b >= nbeats - 0.02:
+            break
+        t = tb(b)
+        bar = int(b // 4)
+        c = prog[min(bar, len(prog) - 1)]
+        u = (t - t0) / D
+        r = roots[c]
+        if s % 2 == 0:
+            M.add(t, strings_spicc(m_(r, 1) + (12 if (s // 2) % 2 else 0), 0.55 + 0.4 * u, dur=0.18, sec='vc',
+                                   seed=k), -3.0 + 2 * u, HALL)
+            M.add(t, strings_spicc(m_(r) + (12 if (s // 2) % 2 else 0), 0.55 + 0.4 * u, dur=0.2, sec='cb',
+                                   seed=k + 3), -6.0 + 2 * u, HALL)
+        if bar >= 2:
+            p = hi[c][[0, 1, 2, 3, 2, 1, 2, 3][s % 8]]
+            M.add(t, strings_spicc(p, 0.45 + 0.45 * u, dur=0.11, sec='vln', seed=k + 7),
+                  -9.0 + 4 * u, HALL)
+        if u < 0.35:
+            M.add(t, P(blip(hi[c][s % 4], 0.6 * (1 - u / 0.35), 0.05, 'saw', 3000, seed=k + 11), 0.3), -9.0, ROOMY)
+        k += 1
+        s += 1
+    # the question rushing back (two statements, the second an octave up)
+    for j, (b0, octv, db_) in enumerate([(1.0, 0, -6.0), (16.0, 1, -8.0)]):
+        notes = [(tb(b0 + 0.5 * bb), (tb(b0 + 0.5 * (bb + dd)) - tb(b0 + 0.5 * bb)) * 0.95, m_(p, octv), 0.9)
+                 for (bb, dd), p in zip(Q_RHY, Q)]
+        line(M, 'str', notes, db_, BIG, 900 + j, sec='vln', rel=0.8, att=0.08, bright=0.8)
+        line(M, 'str', [(t, d, mm - 12, v) for t, d, mm, v in notes], db_ - 3, BIG, 910 + j, sec='vla', rel=0.8,
+             att=0.08, bright=0.7)
+    # the swell: strings + choir, rising, unresolved (on the dominant) at the cut
+    ts0 = tb(16.0)
+    d = tc - ts0
+    up = [(0, 0.35), (d - 0.3, 1.0), (d, 1.0)]
+    M.add(ts0, strings_chord(['E5', 'A5', 'C6'], d, 'vln', att=d * 0.7, rel=0.05, seed=920, dyn=up, trem=0.5,
+                             bright=0.9), -9.0, BIG)
+    M.add(ts0, choir(['A3', 'E4', 'A4', 'C5'], d, 'a', att=d * 0.7, rel=0.05, seed=921, dyn=up), -8.0, HUGE)
+    t_e = tb(28.0) if nbeats > 28.5 else tc - 1.5
+    M.add(t_e, strings_chord(['E2', 'B2', 'E3', 'G#3'], tc - t_e, 'vc', att=0.3, rel=0.05, seed=922,
+                             dyn=[(0, 0.8), (tc - t_e, 1.0)]), -6.0, BIG)
+    M.add(t_e, choir(['E3', 'B3', 'E4', 'G#4'], tc - t_e, 'a', att=0.3, rel=0.05, seed=923), -7.0, HUGE)
+    sh = shepard(tc - (t0 + 4.0), [(0, 0.12), (tc - t0 - 4.0, 0.45)], seed=930)
+    sh *= pts_env(sh.shape[1], [(0, 0.0), (3, 0.4), (tc - t0 - 4.0, 1.0)])[None]
+    M.add(t0 + 4.0, sh, -10.0, BIG)
 
 
-def _home(M, T):
-    # nursery: strings + choir pad
-    tn = T['nursery']  # 222
-    tl = T['lost']  # 228
-    M.add(tn, strings_chord(['A4', 'D5', 'E5'], tl - tn, 'vln', att=1.8, rel=0.3, seed=401, bright=0.4), -12.0, HUGE)
-    M.add(tn, strings_chord(['D3', 'A3', 'F4'], tl - tn, 'vla', att=1.8, rel=0.3, seed=402), -13.0, HUGE)
-    M.add(tn + 0.5, choir(['D4', 'A4'], tl - tn - 0.5, 'u', att=2.0, rel=0.3, seed=403), -12.0, HUGE)
-    M.add(tn, pad(['D3', 'A3', 'E4'], tl - tn, att=2.5, rel=0.3, cutoff=1500, seed=404), -16.0, HUGE)
-    # SIGNAL LOST: music drops to a single high sustained note (free layer: survives the cut)
-    tw = T['newworld']  # 234
-    tr = T['reacquire']  # 242
-    M.add(tl, strings_chord(['A5'], tw - tl + 1.5, 'vln', att=0.25, rel=2.0, seed=410, bright=0.3,
-                            vib_scale=0.3, dyn=[(0, 1.0), (2, 0.8), (6, 0.6), (8, 0.3)]),
-          -15.0, HUGE, layer='free')
-    # the new world: high pad, waiting (open fifths, no third)
-    M.add(tw, pad(['A4', 'E5', 'A5'], tr - tw, att=3.0, rel=1.0, cutoff=3500, seed=420, air=0.4,
-                  dyn=[(0, 0.6), (tr - tw, 1.0)]), -15.0, HUGE)
-    M.add(tw + 1.0, strings_chord(['E6'], tr - tw - 1.0, 'vln', att=3.0, rel=0.8, seed=421, vib_scale=0.4,
-                                  bright=0.2), -21.0, HUGE)
-    M.add(tw + 4.0, strings_chord(['D2', 'A2'], tr - tw - 4.0, 'vc', att=3.0, rel=0.6, seed=422,
-                                  dyn=[(0, 0.5), (tr - tw - 4, 1.0)]), -17.0, BIG)
-    # REACQUIRE: the leitmotif in full, resolving to D MAJOR
-    leitmotif(M, tr, spacing=0.35, vel=0.95, db=-1.0, send=HUGE, warm=True)
-    for i, p in enumerate(['F#6', 'D7']):
-        M.add(tr + 1.2 + 0.25 * i, pan_st(atom_note(p, 0.6, seed=30 + i), 0.2 - 0.3 * i), -6.0, HUGE)
-    tb = tr + 1.0  # bloom
-    bloom = [(0, 0.35), (1.5, 1.0), (2.5, 0.85)]
-    M.add(tb, strings_chord(['F#5', 'A5', 'D6'], 2.6, 'vln', att=1.2, rel=1.2, dyn=bloom, seed=430, bright=0.7), -6.0, HUGE)
-    M.add(tb, strings_chord(['D4', 'F#4', 'A4'], 2.6, 'vla', att=1.2, rel=1.2, dyn=bloom, seed=431), -7.0, HUGE)
-    M.add(tb, strings_chord(['D3', 'A3'], 2.6, 'vc', att=1.2, rel=1.2, dyn=bloom, seed=432), -7.0, HUGE)
-    M.add(tb, strings_chord(['D2'], 2.6, 'cb', att=1.2, rel=1.2, dyn=bloom, seed=433), -9.0, HUGE)
-    M.add(tr + 0.5, choir(['D4', 'F#4', 'A4', 'D5'], 3.0, 'a', att=1.8, rel=1.2, dyn=bloom, seed=434), -6.0, HUGE)
-    M.add(tb, brass_chord(['D3', 'F#3', 'A3'], 2.6, 'hn', att=1.2, rel=1.2, dyn=bloom, seed=435), -12.0, BIG)
-    # theme phrase B in D major (strings + choir), the leap lands on the chime
-    t5 = tr + 2.5  # 244.5
-    beat = 0.625
-    Bmaj = theme(THEME_B_MAJ, beat, octv=1, vel=0.85, accent_leap=0.08) + [(16 * beat, 3.2, n2m('D5'), 0.6)]
-    dyn = [(0, 0.8), (3, 1.0), (8, 0.9), (10, 0.75), (13, 0.3)]
-    M.add(t5, strings_line(Bmaj, 'vln', rel=2.0, seed=440, bright=0.8, dyn=dyn), -5.0, HUGE)
-    M.add(t5, choir_line(Bmaj, 'o', rel=2.0, seed=441, dyn=dyn, octaves=(-1,)), -10.0, HUGE)
-    hm = [('D', 2.5), ('G', 2.5), ('Bm', 2.5), ('A', 2.5), ('D', 4.0)]
-    t = t5
-    for i, (ch, d) in enumerate(hm):
-        lv = [-8, -8, -9, -10, -13][i]
-        M.add(t, strings_chord(tones(ch, 'D4', 'D5'), d, 'vla', att=0.6, rel=1.5, seed=450 + i), lv, HUGE)
-        M.add(t, strings_chord([root(ch, 2), root(ch, 3)], d, 'vc', att=0.6, rel=1.5, seed=460 + i), lv, HUGE)
-        M.add(t, strings_chord([root(ch, 1) if ch != 'D' else root(ch, 2)], d, 'cb', att=0.6, rel=1.5,
-                               seed=470 + i), lv - 2, HUGE)
-        M.add(t, choir(tones(ch, 'D3', 'A3'), d, 'a', att=0.8, rel=1.5, seed=480 + i), lv - 4, HUGE)
-        t += d
-    # final cards: solo piano, final phrase of the main theme in D major
-    tp = t5 + 10.0  # 254.5
-    te = T['endtitle']  # 262
-    bt = np.array([0, .5, 1, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.45, 4.9, 5.35, 5.8, 6.25, 6.7, 7.1, te - tp])
-    A = shift(theme(THEME_A_MAJ, 0, octv=1, vel=0.48, beat_times=bt), tp)
-    for i, (t, d, m, v) in enumerate(A):
-        M.add(t, piano_note(m, v, d, seed=i + 3), 9.0, {'hall': 0.35, 'space': 0.45})
-    for (bb, nts, v) in [(0, ['D2', 'A2', 'F#3'], 0.3), (4, ['G2', 'D3', 'B3'], 0.28), (8, ['A2', 'D3', 'F#3'], 0.27),
-                         (12, ['A1', 'E2', 'G3', 'C#4'], 0.27)]:
-        t = tp + float(np.interp(bb, np.arange(len(bt)), bt))
-        for j, p in enumerate(nts):
-            M.add(t + 0.05 * j, piano_note(p, v - 0.03 * j, 1.9, seed=j + bb), 9.0, {'hall': 0.35, 'space': 0.4})
-    # end title: last D major chord, long tail
-    for j, (p, v) in enumerate([('D1', 0.4), ('D2', 0.36), ('A2', 0.3), ('F#3', 0.3), ('D4', 0.3), ('D5', 0.42),
-                                ('F#5', 0.3), ('A5', 0.3)]):
-        M.add(te + 0.04 * j, piano_note(p, v, 6.0, seed=j + 70), 9.0, {'hall': 0.35, 'space': 0.6})
-    endd = [(0, 0.3), (2.0, 1.0), (5.0, 0.7), (9.0, 0.0)]
-    M.add(te, strings_chord(['D5', 'F#5', 'A5'], 7.0, 'vln', att=2.0, rel=2.5, dyn=endd, seed=490, bright=0.4), -12.0, HUGE)
-    M.add(te, strings_chord(['D3', 'A3', 'F#4'], 7.0, 'vla', att=2.0, rel=2.5, dyn=endd, seed=491), -12.0, HUGE)
-    M.add(te, strings_chord(['D2'], 7.0, 'cb', att=2.0, rel=2.5, dyn=endd, seed=492), -15.0, HUGE)
-    M.add(te + 0.3, choir(['D4', 'F#4', 'A4'], 6.5, 'a', att=2.5, rel=3.0, dyn=endd, seed=493), -13.0, HUGE)
-    # credits: ambient pad + leitmotif echo, fading to silence by 281
-    tc = T['credits']  # 269
-    end = T['end']
-    M.add(tc - 1.0, pad(['D3', 'A3', 'E4', 'F#4'], end - tc - 2.5, att=3.5, rel=3.0, cutoff=1600, seed=500,
-                        air=0.3, dyn=[(0, 1.0), (6, 0.8), (end - tc - 2, 0.25)]), -15.0, HUGE)
-    leitmotif(M, tc + 2.0, spacing=0.5, vel=0.5, db=-8.0, send=HUGE, warm=True)
-    leitmotif(M, tc + 6.5, spacing=0.6, vel=0.32, db=-14.0, send=HUGE, warm=True)
+# ----------------------------------------------------------------------------
+def _answer(M, T):
+    # the AI's caret again: the faint listening tone, until it begins to type
+    _listening_tone(M, T['ai_caret2'], T['ai_first'] + 2.0, T['ai_first'], -15.0)
+    # 'someone loves someone very much': the softest statement of the question, on the piano
+    t0 = T['loves']
+    b = 0.85
+    for j, (p, v) in enumerate([('F2', 0.18), ('C3', 0.16), ('A3', 0.15)]):
+        pno(M, t0 + 0.04 * j, p, v, 3.3, db=8.0, seed=70 + j)
+    mel = motif(Q, t0 + 0.15, b, 0.27, last=5.0)
+    for i, (t, d, mm, v) in enumerate(mel):
+        pno(M, t, mm, v * (0.9 if i in (3, 5) else 1.0), d, db=8.0, seed=80 + i)
+    tA = mel[3][0]
+    for j, (p, v) in enumerate([('A2', 0.15), ('E3', 0.13)]):
+        pno(M, tA + 0.05 * j, p, v, 2.5, db=8.0, seed=90 + j)
+    tD = mel[6][0]
+    for j, (p, v) in enumerate([('D3', 0.14), ('A3', 0.12), ('F4', 0.11)]):
+        pno(M, tD + 0.06 * j, p, v, 4.5, db=8.0, seed=95 + j)
+
+
+# ----------------------------------------------------------------------------
+MEM_CB = {'A': 'A1', 'F#m': 'F#1', 'D': 'D2', 'E': 'E1', 'E2': 'E2'}
+MEM_VC = {'A': ['A2', 'E3'], 'F#m': ['F#2', 'C#3'], 'D': ['D3', 'A3'], 'E': ['E2', 'B2'], 'E2': ['E3', 'B3']}
+MEM_ARP = {'A': ['A2', 'E3', 'B3', 'C#4', 'E4', 'C#4', 'B3', 'E3'],
+           'F#m': ['F#2', 'C#3', 'A3', 'C#4', 'E4', 'C#4', 'A3', 'C#3'],
+           'D': ['D3', 'A3', 'E4', 'F#4', 'A4', 'F#4', 'E4', 'A3'],
+           'E': ['E2', 'B2', 'E3', 'A3', 'B3', 'A3', 'E3', 'B2']}
+
+
+def _memory(M, T):
+    pk = T['peak']                              # the climax (232) is a downbeat
+    beat = 1.0
+    b0 = pk - 20 * beat                         # 212
+    seq = ['A', 'F#m', 'D', 'E', 'F#m', 'D', 'E', 'A', 'A']
+    bars = [(b0 + 4 * beat * k, 4 * beat) for k in range(len(seq))]
+    lv = [0.35, 0.45, 0.55, 0.62, 0.75, 1.0, 0.85, 0.7, 0.5]
+    dyn = [(0, 0.35), (8, 0.55), (12, 0.65), (16, 0.8), (20, 1.0), (24, 0.85), (28, 0.7), (33, 0.5)]
+    va = {'A': ['A3', 'C#4', 'E4'], 'F#m': ['A3', 'C#4', 'E4'], 'D': ['F#3', 'A3', 'E4'], 'E': ['A3', 'B3', 'E4']}
+    voices(M, b0, bars, [[MEM_CB['E2' if (c == 'E' and k == 6) else c] for k, c in enumerate(seq)]], 'cb', -10.0,
+           HUGE, 1000, dyn=dyn, att=1.2)
+    voices(M, b0, bars, [[MEM_VC['E2' if (c == 'E' and k == 6) else c][j] for k, c in enumerate(seq)]
+                         for j in range(2)], 'vc', -12.0, HUGE, 1010, dyn=dyn, att=1.2)
+    va_parts = [[va[c][j] for c in seq] for j in range(3)]
+    va_parts[1][5] = 'B3'                       # the peak: D 6/9
+    bars_va = bars[:6] + [(bars[6][0], 2 * beat), (bars[6][0] + 2 * beat, 2 * beat)] + bars[7:]
+    for j in range(3):                          # the last E: sus4 resolves to the third (V -> I)
+        va_parts[j] = va_parts[j][:7] + [va_parts[j][6]] + va_parts[j][7:]
+    va_parts[0][7] = 'G#3'
+    voices(M, b0, bars_va, va_parts, 'vla', -14.0, HUGE, 1020, dyn=dyn, att=1.4, bright=0.45)
+    # high violins: a warm halo from the second phrase on
+    voices(M, bars[3][0], bars[3:8], [['E5', 'E5', 'A5', 'E5', 'E5'], ['A5', 'C#6', 'F#5', 'B5', 'A5']], 'vln',
+           -18.0, HUGE, 1040, att=2.0, dyn=[(0, 0.5), (8, 1.0), (16, 0.6)], bright=0.4)
+    # piano: a slower, gentler flow (8ths)
+    for k, (c, (tbar, _)) in enumerate(zip(seq, bars)):
+        arp = MEM_ARP[c]
+        for i in range(8):
+            t = tbar + i * beat / 2
+            if t > T['memory_end'] - 0.5:
+                break
+            v = [0.3, 0.2, 0.22, 0.24, 0.26, 0.22, 0.2, 0.2][i] * (0.55 + 0.6 * lv[k])
+            if k == 0 and i < 4:
+                v *= 0.6 + 0.1 * i               # the human is still typing
+            pno(M, t, arp[i], v, beat * 0.8, db=7.0, send=BIG, seed=k * 8 + i)
+    # the question, warm: cellos (with the piano an octave above), then violins + choir to the peak
+    q1 = motif(Q_MAJ, pk - 13 * beat, beat, 0.85, octv=-1)
+    line(M, 'str', q1, -5.0, HUGE, 1050, sec='vc', rel=1.8, att=0.25, bright=0.6)
+    for i, (t, d, mm, v) in enumerate(q1):
+        pno(M, t + 0.01, mm + 12, 0.36, d, db=8.0, send=BIG, seed=100 + i)
+    q2 = motif(Q_PEAK, pk - 5 * beat, beat, 0.9)
+    res = timed(['E5', 'F#5', 'E5', 'C#5', 'B4', 'A4'], [pk + 4, pk + 5, pk + 5.5, pk + 6, pk + 7, pk + 8],
+                [1, 0.5, 0.5, 1, 1, 4.5], 0.85)
+    song = q2[:-1] + [(q2[-1][0], 2.0, q2[-1][2], q2[-1][3])] + res
+    dyn2 = [(0, 0.75), (5, 1.0), (9, 0.95), (13, 0.75), (17, 0.5)]
+    line(M, 'str', song, -3.0, HUGE, 1060, sec='vln', rel=2.2, att=0.2, bright=0.75, dyn=dyn2, octaves=(0, -1))
+    line(M, 'choir', song, -7.0, HUGE, 1061, vowel='u', rel=2.4, att=0.25, dyn=dyn2,
+         morph=('a', [(0, 0.3), (5, 1.0)]))
+    for i, (t, d, mm, v) in enumerate(song):
+        pno(M, t + 0.012, mm + 12, 0.42 if i < 7 else 0.36, min(d, 2.5), db=8.0, send=BIG, seed=110 + i)
+    # choir pad (oo -> ah) under the second half
+    for k in range(3, 8):
+        c = seq[k]
+        nts = {'E': ['E3', 'B3', 'E4'], 'F#m': ['F#3', 'C#4', 'A4'], 'D': ['D3', 'A3', 'F#4'],
+               'A': ['A2', 'E3', 'C#4', 'A4']}[c]
+        M.add(bars[k][0], choir(nts, 4 * beat, 'u', att=1.0, rel=1.6, seed=1070 + k,
+                                morph=('a', [(0, 0.2 if k < 5 else 0.6), (4, 0.4 if k < 5 else 0.8)])),
+              -11.0 + 3 * (k == 5), HUGE)
+
+
+# ----------------------------------------------------------------------------
+def _title(M, T):
+    tc = T['title_crack']
+    t1 = tc + 0.45
+    L = T['silent_by'] - t1
+    big = {'hall': 0.25, 'space': 0.7}
+    for j, (p, v) in enumerate([('A1', 0.5), ('E2', 0.42), ('A2', 0.38), ('C#3', 0.34), ('B3', 0.28),
+                                ('E4', 0.25)]):
+        pno(M, t1 + 0.03 * j, p, v, 9.0, db=7.0, send=big, seed=120 + j)
+    dyn = [(0, 0.3), (2.5, 1.0), (6.0, 0.7), (L - 6, 0.2), (L - 2.5, 0.0)]
+    M.add(t1, strings_chord(['A1'], L - 2.5, 'cb', att=2.0, rel=2.5, seed=1100, dyn=dyn, bright=0.2), -13.0, big)
+    M.add(t1, strings_chord(['A2', 'E3'], L - 2.5, 'vc', att=2.0, rel=2.5, seed=1101, dyn=dyn, bright=0.25),
+          -15.0, big)
+    M.add(t1 + 0.3, strings_chord(['C#4', 'E4'], L - 3.0, 'vla', att=2.5, rel=2.5, seed=1102, dyn=dyn,
+                                  bright=0.2), -19.0, big)
+    M.add(t1 + 0.5, choir(['A2', 'E3', 'C#4'], L - 4.0, 'u', att=2.5, rel=3.0, seed=1103, dyn=dyn), -18.0, big)
+    # credits: the question, once more, very far away, left unfinished
+    tcr = T['credits'] + 0.8
+    for i, p in enumerate(['E6', 'D6', 'A5']):
+        M.add(tcr + 0.45 * i, P(glass_ping(p, 0.55 - 0.1 * i, seed=1110 + i, t60=2.5, click=0.15),
+                                -0.2 + 0.2 * i), -16.0, HUGE)
