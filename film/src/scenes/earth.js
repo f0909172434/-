@@ -46,7 +46,7 @@ uniform vec4 uCyc[7]; varying vec2 vUv;
 vec3 swirl(vec3 p){
   for (int i = 0; i < 7; i++){
     vec3 c = normalize(uCyc[i].xyz); float s = uCyc[i].w;
-    float d = distance(p, c); float a = s*exp(-d*d*28.0)*7.0;
+    float d = distance(p, c); float a = s*exp(-d*d*18.0)*9.0;
     // rotate p around axis c
     vec3 k = c; p = p*cos(a) + cross(k, p)*sin(a) + k*dot(k, p)*(1.0 - cos(a));
   }
@@ -61,7 +61,7 @@ void main(){
   vec3 w = vec3(fbmo(q*2.0 + 1.0, 4), fbmo(q*2.0 + 6.0, 4), fbmo(q*2.0 + 11.0, 4));
   float n = fbmo(q*3.2 + w*0.9, 5) + 0.35*fbmo(q*9.0 + w*1.5, 4);
   float band = 0.55 + 0.35*exp(-lat*lat*40.0) + 0.3*exp(-pow(abs(lat) - 0.85, 2.0)*30.0) - 0.25*exp(-pow(abs(lat) - 0.42, 2.0)*60.0);
-  float cl = smoothstep(0.12, 0.42, n*0.9 + band*0.45 - 0.3 + (fbmo(q*14.0 + w, 3))*0.12);
+  float cl = smoothstep(0.08, 0.4, n*0.95 + band*0.45 - 0.17 + (fbmo(q*14.0 + w, 3))*0.12);
   float fine = fbmo(q*20.0 + w*2.0, 3)*0.5 + 0.5;
   cl *= 0.7 + 0.5*fine;
   float cir = smoothstep(0.1, 0.7, fbmo(vec3(p.x*1.5, p.y*5.0, p.z*1.5) + 21.0 + w, 4))*0.6;
@@ -389,7 +389,7 @@ export default class Earth {
     const albRT = bake(r, 2048, 1024, ALBEDO_BAKE, { uKeep: { value: keep } }, { mipmaps: false, wrapS: THREE.RepeatWrapping, type: THREE.UnsignedByteType });
     const rnd = new Rand(31);
     const cyc = [];
-    for (let i = 0; i < 7; i++) { const v = [0, 0, 0]; rnd.onSphere(v); v[1] *= 0.6; cyc.push(new THREE.Vector4(v[0], v[1], v[2], (v[1] > 0 ? 1 : -1) * rnd.range(0.6, 1.0))); }
+    for (let i = 0; i < 7; i++) { const v = [0, 0, 0]; rnd.onSphere(v); v[1] = Math.sign(v[1] || 1) * (0.25 + 0.4 * Math.abs(v[1])); cyc.push(new THREE.Vector4(v[0], v[1], v[2], (v[1] > 0 ? 1 : -1) * rnd.range(0.6, 1.0))); }
     const cloudRT = bake(r, 2048, 1024, CLOUD_BAKE, { uCyc: { value: cyc } }, { mipmaps: false, wrapS: THREE.RepeatWrapping, type: THREE.UnsignedByteType });
     const mat = new THREE.ShaderMaterial({
       uniforms: {

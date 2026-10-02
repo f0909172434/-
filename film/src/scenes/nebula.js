@@ -874,7 +874,7 @@ export default class Nebula {
     return {
       scene: D.sceneFG, camera: cam, render, target: atomPos,
       post: {
-        exposure: lerp(1.0, 0.85, on), flash: fl,
+        exposure: lerp(1.0, 0.78, on), flash: fl,
         bloomStrength: 0.8 + 0.9 * on * flashE, bloomThreshold: 0.7, bloomKnee: 0.6, bloomRadius: 0.9,
         streak: 0.06 + on * (0.12 + 0.45 * flashE * flashE), streakTint: [1.0, 0.78, 0.5],
         ca: 0.002, vignette: 0.45, grain: 0.045,
