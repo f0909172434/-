@@ -867,7 +867,7 @@ export default class RiverScene {
       const fireK = mode === 'return' ? 0.45 * (1 - smoothstep(160.6, 162.0, G)) : smoothstep(88.5, 94.0, G);
       if (fireK > 0.002) {
         const breathe = 1 + 0.1 * Math.sin(G * 2 * Math.PI / 4.1) + 0.05 * Math.sin(G * 2 * Math.PI / 2.63 + 1.3);
-        this.fire.material.uniforms.uI.value = 0.3 * fireK * breathe;
+        this.fire.material.uniforms.uI.value = 0.3 * fireK * breathe * (mode === 'return' ? 1 : 1 - 0.3 * envelope(G, 95.2, 97.6, 0.8, 1.0));   // gentler as the camera passes close
         this.crackCore.uniforms.uOpacity.value = fireK * (0.9 + 0.1 * Math.sin(G * 2 * Math.PI / 3.3));
         this.crackGlow.uniforms.uOpacity.value = fireK * breathe;
         this.fire.visible = this.crackCore.mesh.visible = this.crackGlow.mesh.visible = true;
