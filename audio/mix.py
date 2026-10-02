@@ -1,4 +1,4 @@
-"""Buses, reverbs, gates, mastering, WAV writing, QC and the overview plot."""
+"""Buses, reverbs, gates, mastering, WAV writing, QC and the overview image (卜 ORACLE)."""
 from __future__ import annotations
 
 import contextlib
@@ -193,7 +193,8 @@ def onset_time(x, t, band=None, win=(-0.3, 0.3)):
     return (max(a, 0) + i - d // 2) / SR, float(np.max(e))
 
 
-def qc_report(out, stems, T, log=print):
+def qc_report(out, stems, checks, silences, log=print):
+    """checks: [(name, t, band, stem|'master', window)], silences: [(t0, t1, name)]."""
     rep = {}
     n = out.shape[1]
     log('\n=== QC ===')
@@ -207,14 +208,15 @@ def qc_report(out, stems, T, log=print):
     log(f"length {rep['seconds']:.6f} s | NaN {rep['nan']} | sample peak {rep['sample_peak_dbfs']:.2f} dBFS | "
         f"true peak {rep['true_peak_dbtp']:.2f} dBTP | clipped samples {rep['clipped']}")
     log(f"DC offset L {rep['dc'][0]:.2e} R {rep['dc'][1]:.2e} | integrated loudness {rep['lufs_i']:.2f} LUFS")
+    rep['stems'] = {}
     for k, s in stems.items():
-        log(f"  stem {k:9s} peak {db(np.max(np.abs(s))):6.1f} dBFS  integrated {integrated_lufs(s):6.1f} LUFS")
-    # stereo / mono compatibility
+        pk, li = float(db(np.max(np.abs(s)))), integrated_lufs(s)
+        rep['stems'][k] = dict(peak_dbfs=pk, lufs_i=li)
+        log(f"  stem {k:9s} peak {pk:6.1f} dBFS  integrated {li:6.1f} LUFS")
     c = [float(np.corrcoef(out[0, ns(a):ns(a + 10)], out[1, ns(a):ns(a + 10)])[0, 1])
-         for a in np.arange(0, n / SR - 10, 10) if np.any(out[:, ns(a):ns(a + 10)])]
+         for a in np.arange(0, n / SR - 10, 10) if np.std(out[:, ns(a):ns(a + 10)]) > 1e-6]
     rep['lr_corr_min'] = min(c)
     log(f"L/R correlation per 10 s: min {min(c):.2f}, median {np.median(c):.2f} (mono-safe if > 0)")
-    # level vs time
     log('\nlevel every 2 s  (t: RMS dBFS / peak dBFS / short-term LUFS)')
     tt, st = short_term_lufs(out, 3.0, 0.5)
     rows = []
@@ -223,109 +225,103 @@ def qc_report(out, stems, T, log=print):
         rms = db(np.sqrt(np.mean(seg ** 2)))
         pk = db(np.max(np.abs(seg)))
         s = float(np.interp(t0 + 1.0, tt, st))
-        rows.append((t0, rms, pk, s))
+        rows.append((float(t0), float(rms), float(pk), s))
     for i in range(0, len(rows), 4):
         log('  ' + ' | '.join(f'{r[0]:5.0f}s {r[1]:6.1f} {r[2]:6.1f} {r[3]:6.1f}' for r in rows[i:i + 4]))
     rep['levels'] = rows
-    # structural silences
-    for a, b, name in [(T['silence'] + 0.1, T['supernova'] - 0.05, 'pre-supernova black'),
-                       (T['heart_stop'] + 0.1, T['harmonic'] - 0.02, 'heartbeat-stop bar')]:
+    rep['silences'] = []
+    for a, b, name in silences:
         seg = out[:, ns(a):ns(b)]
-        log(f'silence check {name:22s} {a:.2f}-{b:.2f}s: RMS {db(np.sqrt(np.mean(seg ** 2))):.1f} dBFS, '
-            f'peak {db(np.max(np.abs(seg))):.1f} dBFS')
-    # sync
-    log('\nsync check (half-max onset in band vs. timeline):')
-    checks = [('boot blip 1', T['boot'] + T['boot_lines'][0]['t'], (1000, 4000), stems['sfx']),
-              ('boot blip 5', T['boot'] + T['boot_lines'][4]['t'], (1000, 4000), stems['sfx']),
-              ('hard-cut boom', T['hard_cut'], (20, 200), stems['sfx']),
-              ('presents piano', T['presents_note'], (30, 400), stems['music']),
-              ('leitmotif #1', T['lock1'], (1000, 1400), stems['music']),
-              ('SUPERNOVA', T['supernova'], (20, 300), out),
-              ('ignition impact', T['ignition'], (25, 150), stems['sfx']),
-              ('sunrise timp+cym', T['sunrise'], (84, 91), stems['music']),
-              ('heart stops/harm.', T['harmonic'], (1500, 2000), stems['music']),
-              ('first heartbeat', T['heart'], (30, 120), stems['sfx']),
-              ('climax impact', T['climax'], (20, 200), stems['sfx']),
-              ('SIGNAL LOST beep', T['lost'], (400, 600), stems['sfx']),
-              ('reacquire motif', T['reacquire'], (1100, 1250), stems['music']),
-              ('HOME chime', T['home'], (1700, 1820), stems['sfx'])]
+        r_, p_ = float(db(np.sqrt(np.mean(seg ** 2)))), float(db(np.max(np.abs(seg))))
+        rep['silences'].append((name, a, b, r_, p_))
+        log(f'silence check {name:24s} {a:7.2f}-{b:7.2f}s: RMS {r_:6.1f} dBFS, peak {p_:6.1f} dBFS')
+    log('\nsync check (steepest onset in band vs. timeline; 1 frame = 41.7 ms):')
     sync = []
-    for name, t, band, src in checks:
-        on, pk = onset_time(src, t, band)
+    for name, t, band, src, win in checks:
+        x = out if src == 'master' else stems[src]
+        on, pk = onset_time(x, t, band, win)
         d = (on - t) * 1000
-        sync.append((name, t, on, d))
-        log(f'  {name:18s} expected {t:7.3f}s  measured {on:7.3f}s  delta {d:+6.1f} ms  '
-            f'({"OK" if abs(d) <= 1000 / 24 else "CHECK"}, 1 frame = 41.7 ms)')
+        ok = abs(d) <= 1000 / 24
+        sync.append((name, t, on, d, ok))
+        log(f'  {name:26s} expected {t:8.3f}s  measured {on:8.3f}s  delta {d:+6.1f} ms  {"OK" if ok else "CHECK"}')
     rep['sync'] = sync
+    ds = np.array([abs(s[3]) for s in sync])
+    rep['sync_max_abs_ms'] = float(ds.max())
+    rep['sync_mean_abs_ms'] = float(ds.mean())
+    log(f'  -> {int(np.sum([s[4] for s in sync]))}/{len(sync)} within one frame; max |delta| {ds.max():.1f} ms, '
+        f'mean {ds.mean():.1f} ms')
     return rep
 
 
-def overview_png(path, out, stems, T, marks, log=print):
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-    except Exception as e:  # pragma: no cover
-        log(f'  (matplotlib unavailable: {e}; skipping overview)')
-        return
+def _png(path, img):
+    import zlib
+    h, w, _ = img.shape
+    raw = b''.join(b'\x00' + img[y].tobytes() for y in range(h))
+
+    def chunk(tag, data):
+        return (struct.pack('>I', len(data)) + tag + data
+                + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff))
+    with open(path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
+
+
+def overview_png(path, out, stems, marks, sync_marks, log=print, W=1800):
+    """Overview without matplotlib: waveform (min/max), stem RMS (dB), short-term loudness, log-frequency
+    spectrogram; grey lines = audio cues, orange ticks = checked sync points. 10-s grid."""
     from scipy import signal
     n = out.shape[1]
     dur = n / SR
-    fig, ax = plt.subplots(4, 1, figsize=(26, 15), sharex=True,
-                           gridspec_kw=dict(height_ratios=[1.1, 1.0, 1.0, 2.2]))
-    fig.patch.set_facecolor('#0d0f12')
-    for a in ax:
-        a.set_facecolor('#0d0f12')
-        a.tick_params(colors='#aab')
-        for s in a.spines.values():
-            s.set_color('#334')
-    # waveform envelope
-    hop = ns(0.05)
-    m = out.mean(axis=0)[: (n // hop) * hop].reshape(-1, hop)
-    tt = np.arange(m.shape[0]) * hop / SR
-    ax[0].fill_between(tt, m.min(axis=1), m.max(axis=1), color='#e8c37a', lw=0)
-    ax[0].set_ylim(-1, 1)
-    ax[0].set_ylabel('master', color='#aab')
-    ax[0].set_title('THE LONG WAY HOME (Gui Tu) — score & sound design overview (master, 48 kHz / 24-bit)',
-                    color='#dde', fontsize=14, loc='left')
-    # stems envelopes
-    cols = {'music': '#7ab8e8', 'sfx': '#e87a7a', 'ambience': '#8ae87a'}
+    Hw, Hs, Hl, Hsp, gap = 150, 150, 120, 300, 6
+    H = Hw + Hs + Hl + Hsp + 3 * gap
+    img = np.full((H, W, 3), 13, np.uint8)
+    col = np.minimum((np.arange(n) * W) // n, W - 1)
+    m = out.mean(axis=0)
+    mn = np.full(W, 0.0)
+    mx = np.full(W, 0.0)
+    np.minimum.at(mn, col, m)
+    np.maximum.at(mx, col, m)
+    y0 = 0
+    for x in range(W):
+        a = int(Hw / 2 - mx[x] * Hw / 2)
+        b = int(Hw / 2 - mn[x] * Hw / 2)
+        img[y0 + max(a, 0):y0 + min(b + 1, Hw), x] = (232, 195, 122)
+    y0 = Hw + gap
+    cols = {'music': (122, 184, 232), 'sfx': (232, 122, 122), 'ambience': (138, 232, 122)}
     for k, s in stems.items():
-        e = np.sqrt((s.mean(axis=0)[: (n // hop) * hop].reshape(-1, hop) ** 2).mean(axis=1))
-        ax[1].plot(tt, db(e), color=cols.get(k, '#ccc'), lw=0.8, label=k)
-    ax[1].set_ylim(-80, 0)
-    ax[1].set_ylabel('stem RMS dBFS', color='#aab')
-    ax[1].legend(loc='lower left', facecolor='#1a1d22', labelcolor='#dde', fontsize=9)
-    # loudness
-    t3, s3 = short_term_lufs(out, 3.0, 0.25)
-    t4, s4 = short_term_lufs(out, 0.4, 0.1)
-    ax[2].plot(t4, s4, color='#556', lw=0.6, label='momentary (0.4 s)')
-    ax[2].plot(t3, s3, color='#f0e0a0', lw=1.2, label='short-term (3 s)')
-    ax[2].axhline(integrated_lufs(out), color='#e8c37a', ls='--', lw=0.8, label='integrated')
-    ax[2].set_ylim(-60, -2)
-    ax[2].set_ylabel('LUFS', color='#aab')
-    ax[2].legend(loc='lower left', facecolor='#1a1d22', labelcolor='#dde', fontsize=9)
-    # log-frequency spectrogram
-    x = out.mean(axis=0)
-    f, t, Z = signal.stft(x, fs=SR, nperseg=4096, noverlap=4096 - 2400)
-    S = np.abs(Z)
-    fl = np.geomspace(25, 20000, 300)
-    idx = np.searchsorted(f, fl)
-    S2 = S[np.clip(idx, 0, len(f) - 1)]
-    D = 20 * np.log10(S2 + 1e-9)
-    D = np.clip(D - D.max(), -100, 0)
-    ax[3].imshow(D, origin='lower', aspect='auto', extent=[0, dur, 0, len(fl)], cmap='magma', vmin=-95, vmax=0)
-    yt = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-    ax[3].set_yticks([np.searchsorted(fl, v) for v in yt])
-    ax[3].set_yticklabels([f'{v // 1000}k' if v >= 1000 else str(v) for v in yt])
-    ax[3].set_ylabel('Hz', color='#aab')
-    ax[3].set_xlabel('time (s)', color='#aab')
-    ax[3].set_xticks(np.arange(0, dur + 1, 10))
-    for t0, label in marks:
-        for a in ax:
-            a.axvline(t0, color='#ffffff', alpha=0.18, lw=0.7)
-        ax[0].text(t0 + 0.4, 0.92, label, color='#dde', fontsize=7.5, rotation=90, va='top')
-    plt.tight_layout()
-    fig.savefig(path, dpi=90, facecolor=fig.get_facecolor())
-    plt.close(fig)
+        p = np.zeros(W)
+        np.add.at(p, col, s.mean(axis=0) ** 2)
+        cnt = np.bincount(col, minlength=W)
+        lv = 10 * np.log10(p / np.maximum(cnt, 1) + 1e-12)
+        yy = np.clip(((-lv) / 80.0) * Hs, 0, Hs - 1).astype(int)
+        for x in range(W):
+            img[y0 + yy[x], x] = cols.get(k, (200, 200, 200))
+    y0 = Hw + Hs + 2 * gap
+    tt, st = short_term_lufs(out, 3.0, 0.25)
+    xs = np.clip((tt / dur * W).astype(int), 0, W - 1)
+    ys = np.clip(((-st - 2) / 58.0) * Hl, 0, Hl - 1).astype(int)
+    for lvl in (-16, -23, -40):
+        img[y0 + int((-lvl - 2) / 58.0 * Hl), :] = (60, 60, 70)
+    for x, y in zip(xs, ys):
+        img[y0 + y, x] = (240, 224, 160)
+    y0 = Hw + Hs + Hl + 3 * gap
+    f, t, Z = signal.stft(m, fs=SR, nperseg=4096, noverlap=4096 - 2048)
+    fl = np.geomspace(25, 20000, Hsp)
+    S = np.abs(Z)[np.clip(np.searchsorted(f, fl), 0, len(f) - 1)]
+    D = 20 * np.log10(S + 1e-9)
+    D = np.clip((D - D.max() + 95) / 95, 0, 1)
+    ti = np.clip((np.arange(W) / W * len(t)).astype(int), 0, len(t) - 1)
+    D = D[::-1][:, ti]
+    img[y0:y0 + Hsp] = np.stack([np.clip(D * 2.2 - 0.4, 0, 1) * 255, np.clip(D * 1.6 - 0.8, 0, 1) * 255,
+                                 np.clip(1.2 - np.abs(D - 0.45) * 3, 0, 1) * 160], -1).astype(np.uint8)
+    for s10 in np.arange(0, dur, 10):
+        x = int(s10 / dur * W)
+        img[:, x] = np.maximum(img[:, x], 40)
+    for t0, _ in marks:
+        x = min(int(t0 / dur * W), W - 1)
+        img[:, x] = (110, 110, 120)
+    for t0, _ in sync_marks:
+        x = min(int(t0 / dur * W), W - 1)
+        img[Hw - 12:Hw, x] = (255, 150, 40)
+    _png(path, img)
     log(f'  wrote {path}')

@@ -65,10 +65,13 @@ export class Film {
 
   async prepare(T0, T1) {
     const need = new Set();
+    // sub-frames reach up to half a frame before T (the shutter), so a frame that lands exactly on the end of a
+    // dissolve still renders its first sub-frames inside the dissolve and needs the previous shot's scene
+    const pad = 1 / this.tl.fps;
     this.tl.shots.forEach((s, i) => {
       if (s.end > T0 && s.start <= T1) {
         this.scenesOf(s).forEach(n => need.add(n));
-        if (s.in && s.in.type === 'dissolve' && i > 0 && T0 < s.start + s.in.dur) this.scenesOf(this.tl.shots[i - 1]).forEach(n => need.add(n));
+        if (s.in && s.in.type === 'dissolve' && i > 0 && T0 - pad < s.start + s.in.dur) this.scenesOf(this.tl.shots[i - 1]).forEach(n => need.add(n));
       }
     });
     for (const name of Object.keys(this.scenes)) {

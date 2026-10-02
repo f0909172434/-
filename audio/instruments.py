@@ -1,4 +1,4 @@
-"""Synthesised orchestra for 歸途.
+"""Synthesised orchestra for 卜 ORACLE (first written for 歸途, extended).
 
 Every instrument returns a stereo numpy array (2, n) at SR, starting at its
 own t = 0.  Sustained instruments are normalised so that a full-level
@@ -662,3 +662,213 @@ def shepard(dur, rate_pts, fmin=22.0, ncomp=9, center=700.0, sigma=1.5, seed=0):
         out[ch] = y
     out /= np.sqrt(np.mean(out ** 2)) + 1e-9
     return out * REF_RMS
+
+
+# ============================================================================
+# 卜 ORACLE additions: glass and data voices, ancient voices, keyboard and electronics.
+# Percussive / one-shot voices return MONO arrays (the caller pans); lines return stereo.
+# ============================================================================
+def glass_ping(pitch, vel=0.7, seed=0, t60=1.6, click=0.25, bright=1.0):
+    """Crystalline ping (a glass struck by a tiny hammer). The click puts the onset exactly at t = 0."""
+    r = _rng(seed + 101)
+    f0 = float(mtof(n2m(pitch)))
+    n = ns(t60 * 1.1 + 0.05)
+    t = tvec(n)
+    y = _additive(f0, [1, 2.32, 4.25, 6.63, 9.38],
+                  [1, 0.32 * bright, 0.14 * bright, 0.06 * bright, 0.025 * bright],
+                  [t60, t60 * 0.45, t60 * 0.22, t60 * 0.12, t60 * 0.07], n, r, beat=0.7)
+    y *= np.minimum(t / 0.0007, 1)
+    y += click * hp(r.standard_normal(n), 3000) * np.exp(-t / 0.0009)
+    return fade(y * 0.16 * vel, 0, 0.05)
+
+
+def bowed_glass(pts, dur, att=0.6, rel=1.2, dyn=None, seed=0, harm=0.12, noise=0.05, beat=0.7):
+    """Glass harmonica: an almost pure, slightly beating tone that can glide.
+    pts: [(t, pitch), ...] pitch targets, linearly interpolated in semitones (glides)."""
+    r = _rng(seed + 202)
+    n = ns(dur + rel)
+    t = tvec(n)
+    midi = np.interp(t, [p[0] for p in pts], [n2m(p[1]) for p in pts])
+    f = mtof(midi) * (1 + 0.0008 * np.sin(TWO_PI * 4.4 * t + r.uniform(0, TWO_PI)))
+    amp = asr(n, att, rel) * (1 + 0.05 * smooth_random(n, 2.5, r))
+    if dyn is not None:
+        amp = amp * pts_env(n, dyn)
+    ph1 = np.cumsum(f) / SR
+    ph2 = np.cumsum(f + beat) / SR
+    y = 0.5 * (np.sin(TWO_PI * ph1) + np.sin(TWO_PI * ph2 + 1.0))
+    y += harm * np.sin(2 * TWO_PI * ph1 + 0.4) + 0.35 * harm * np.sin(3 * TWO_PI * ph1 + 1.1)
+    y += noise * lp(r.standard_normal(n), 260) * np.sin(TWO_PI * ph1) * 3.0   # wet-finger friction
+    return y * amp * 0.1
+
+
+def harpsichord(pitch, vel=0.7, dur=0.2, seed=0, four=0.0):
+    """Plucked harpsichord string (additive, plucked near the nut), quill click and damper.
+    four > 0 adds the 4' (octave) register."""
+    midi = int(round(n2m(pitch)))
+    key = ('hpsd', midi, round(dur, 2), seed % 3, round(four, 2))
+    if key in _PIANO_CACHE:
+        return _PIANO_CACHE[key]
+    r = _rng(midi * 17 + seed % 3)
+    T0 = float(np.clip(7.0 * 2 ** (-(midi - 48) / 18.0), 0.8, 9.0))
+    L = min(T0, dur + 0.3)
+    n = ns(L)
+    t = tvec(n)
+    y = np.zeros(n)
+    for reg, gain in ((0, 1.0), (12, four)):
+        if gain <= 0:
+            continue
+        f0 = float(mtof(midi + reg))
+        k = np.arange(1, 61)
+        fk = k * f0 * np.sqrt(1 + 2e-5 * k * k)
+        keep = fk < 15000
+        k, fk = k[keep], fk[keep]
+        ak = np.abs(np.sin(np.pi * k * 0.13)) / k ** 0.8 + 0.01
+        ak /= np.sqrt(np.sum(ak ** 2))
+        Tk = T0 / (1 + (fk / 2500.0) ** 1.3)
+        for f, a, T in zip(fk, ak, Tk):
+            y += gain * a * np.exp(-6.91 * t / T) * np.sin(TWO_PI * f * t + r.uniform(0, TWO_PI))
+    y *= np.minimum(t / 0.0004, 1)
+    nz = r.standard_normal(n)
+    y += bp(nz, 2000, 10000) * np.exp(-t / 0.0015) * 0.18 + lp(nz, 900) * np.exp(-t / 0.006) * 0.12
+    y *= np.where(t < dur, 1.0, np.exp(-(t - dur) / 0.035))
+    rel = np.maximum(t - dur, 0)
+    y += lp(nz, 1200) * (t >= dur) * np.exp(-rel / 0.004) * 0.05
+    y = fade(y * 0.2 * vel ** 1.2, 0.0, 0.02)
+    _PIANO_CACHE[key] = y
+    return y
+
+
+def xun_line(notes, rel=0.5, att=0.1, glide=0.05, dyn=None, seed=0, breath=0.45, pan_c=0.0):
+    """Xun (殷墟-era clay vessel flute): a near-pure tone carried on breath, scooped attacks."""
+    r = _rng(seed + 303)
+    n, f, amp, ve = line_curves(notes, rel=rel, att=att, glide=glide, vib_delay=0.35)
+    if dyn is not None:
+        amp = amp * pts_env(n, dyn)
+    t = tvec(n)
+    mod = 1 + 0.006 * ve * np.sin(TWO_PI * 4.3 * t + r.uniform(0, TWO_PI)) + 0.0025 * smooth_random(n, 1.3, r)
+    ph = np.cumsum(f * mod) / SR
+    tone = np.sin(TWO_PI * ph) + 0.06 * np.sin(3 * TWO_PI * ph) + 0.02 * np.sin(2 * TWO_PI * ph + 0.5)
+    nz = r.standard_normal(n)
+    core = lp(nz, 240) * np.sin(TWO_PI * ph) * 2.2
+    air = bp(nz, 1200, 6500) * 0.25
+    chiff = np.zeros(n)
+    for s, d, p, v in notes:
+        a = ns(s)
+        if a < n:
+            tt = t[a:] - s
+            chiff[a:] += v * np.exp(-tt / 0.035)
+    an = amp / (np.max(amp) + 1e-12)
+    y = (tone + breath * core) * amp + breath * air * amp * an + bp(nz, 700, 4500) * chiff * 0.25 * breath
+    y = hp(y, 110)
+    return _norm(pan(y, pan_c) * 0.7071, amp)
+
+
+def solo_bowed_line(notes, rel=0.6, att=0.18, glide=0.11, dyn=None, seed=0, nasal=1.0, pan_c=0.0,
+                    vib_depth=22.0, vib_rate=5.6):
+    """A single bowed string with sliding portamento and expressive vibrato (between a viola and an erhu)."""
+    r = _rng(seed + 404)
+    n, f, amp, ve = line_curves(notes, rel=rel, att=att, glide=glide, vib_delay=0.28)
+    if dyn is not None:
+        amp = amp * pts_env(n, dyn)
+    t = tvec(n)
+    rate = vib_rate * (1 + 0.05 * smooth_random(n, 0.8, r))
+    vib = np.sin(TWO_PI * np.cumsum(rate) / SR + r.uniform(0, TWO_PI))
+    cents = vib_depth * ve * vib + 4.0 * smooth_random(n, 1.4, r)
+    src = saw(f * 2 ** (cents / 1200.0), n, r.random())
+    y = eq(hp(src, 240), [('peak', 900, 7.0 * nasal, 1.6), ('peak', 2400, 4.0 * nasal, 1.8),
+                         ('peak', 4600, -6.0, 1.0)])
+    y = lp(y, 6500)
+    an = amp / (np.max(amp) + 1e-12)
+    y = y * amp + bp(r.standard_normal(n), 1800, 7000) * 0.06 * amp * an
+    return _norm(pan(y, pan_c) * 0.7071, amp)
+
+
+_HUM = [(290, 70, 0.0), (640, 90, -9.0), (2300, 140, -28.0), (2850, 190, -33.0)]
+
+
+def voice_line(notes, rel=0.9, att=0.22, glide=0.08, dyn=None, seed=0, formants=None, breath=0.05,
+               pan_c=0.0, vib_depth=18.0):
+    """One warm human voice humming ('oo'), with natural vibrato, jitter and breath."""
+    r = _rng(seed + 505)
+    n, f, amp, ve = line_curves(notes, rel=rel, att=att, glide=glide, vib_delay=0.4)
+    if dyn is not None:
+        amp = amp * pts_env(n, dyn)
+    t = tvec(n)
+    rate = 5.2 * (1 + 0.06 * smooth_random(n, 0.7, r))
+    cents = (vib_depth * ve * np.sin(TWO_PI * np.cumsum(rate) / SR + r.uniform(0, TWO_PI))
+             + 3.0 * smooth_random(n, 7.0, r))
+    src = lp(saw(f * 2 ** (cents / 1200.0), n, r.random()), 800, order=1)
+    y = formant_bank(src, formants or _HUM) + 0.25 * lp(src, 380)
+    an = amp / (np.max(amp) + 1e-12)
+    y = y * amp * (1 + 0.04 * smooth_random(n, 9.0, r)) + breath * bp(r.standard_normal(n), 400, 3200) * amp * an
+    return _norm(pan(hp(y, 70), pan_c) * 0.7071, amp)
+
+
+def stone_chime(pitch, vel=0.7, seed=0, length=None):
+    """Qing 磬, the Shang stone chime: clear, slightly inharmonic, a soft wooden mallet."""
+    r = _rng(seed + 606)
+    m = n2m(pitch)
+    f0 = float(mtof(m))
+    T = 3.2 * 2 ** (-(m - 57) / 24)
+    n = ns(length or T * 1.1)
+    t = tvec(n)
+    y = _additive(f0, [1, 2.27, 3.73, 5.42, 7.37, 9.6], [1, 0.42, 0.26, 0.14, 0.07, 0.035],
+                  [T, T * 0.5, T * 0.3, T * 0.18, T * 0.1, T * 0.06], n, r, beat=0.35)
+    y *= np.minimum(t / 0.0012, 1)
+    y += bp(r.standard_normal(n), 500, 4500) * np.exp(-t / 0.004) * 0.22
+    return fade(y * 0.2 * vel, 0, 0.1)
+
+
+def bronze_bell(pitch, vel=0.7, seed=0, decay=1.0, bright=1.0):
+    """Bianzhong-like bronze bell (hum, prime, minor-third tierce, quint, nominal...), fairly short."""
+    r = _rng(seed + 707)
+    m = n2m(pitch)
+    f0 = float(mtof(m))
+    T = 1.7 * decay * 2 ** (-(m - 69) / 24)
+    n = ns(T * 1.25 + 0.05)
+    t = tvec(n)
+    y = _additive(f0, [0.5, 1.0, 1.19, 1.5, 2.0, 2.66, 3.17, 4.2],
+                  [0.22, 1.0, 0.45, 0.22, 0.32 * bright, 0.16 * bright, 0.1 * bright, 0.05 * bright],
+                  [T * 1.3, T, T * 0.8, T * 0.6, T * 0.5, T * 0.32, T * 0.24, T * 0.14], n, r, beat=0.6)
+    y *= np.minimum(t / 0.0008, 1)
+    y += bp(r.standard_normal(n), 900, 6000) * np.exp(-t / 0.0025) * 0.18 * bright
+    return fade(y * 0.17 * vel, 0, 0.05)
+
+
+def wind_chime(pitch, vel=0.6, seed=0, decay=1.0):
+    """A small bell in the wind: thin free-bar partials, long shimmer, soft brass clapper."""
+    r = _rng(seed + 808)
+    m = n2m(pitch)
+    f0 = float(mtof(m))
+    T = 3.2 * decay * 2 ** (-(m - 84) / 24)
+    n = ns(T * 1.1 + 0.05)
+    t = tvec(n)
+    y = _additive(f0, [1, 2.76, 5.40, 8.93], [1, 0.26, 0.09, 0.035], [T, T * 0.42, T * 0.2, T * 0.1], n, r,
+                  beat=0.9)
+    y *= np.minimum(t / 0.0015, 1)
+    y += bp(r.standard_normal(n), 2500, 9000) * np.exp(-t / 0.0012) * 0.12
+    return fade(lp(y, 9000) * 0.16 * vel, 0, 0.1)
+
+
+def data_pluck(pitch, vel=0.6, seed=0, t60=0.9):
+    """Soft tine pluck (kalimba-like) for the data pattern."""
+    r = _rng(seed + 909)
+    f0 = float(mtof(n2m(pitch)))
+    n = ns(t60 * 1.1 + 0.03)
+    t = tvec(n)
+    y = _additive(f0, [1, 2.0, 5.95], [1, 0.08, 0.13], [t60, t60 * 0.35, t60 * 0.07], n, r)
+    y *= np.minimum(t / 0.001, 1)
+    y += hp(r.standard_normal(n), 2500) * np.exp(-t / 0.0008) * 0.08
+    return fade(y * 0.18 * vel, 0, 0.03)
+
+
+def blip(pitch, vel=0.6, dur=0.08, wave='square', cutoff=2500.0, seed=0, duty=0.5):
+    """Short electronic pulse (filtered square / saw)."""
+    r = _rng(seed + 1001)
+    f = float(mtof(n2m(pitch)))
+    n = ns(dur + 0.06)
+    t = tvec(n)
+    osc = square(f, n, r.random() * 0.0, duty) if wave == 'square' else saw(f, n, 0.0)
+    env = np.minimum(t / 0.0015, 1) * np.exp(-t / max(dur * 0.55, 0.004))
+    y = lp(osc * env, cutoff, order=2)
+    return fade(y * 0.07 * vel, 0, 0.01)
