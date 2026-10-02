@@ -70,30 +70,40 @@ export function rigUp(G, river) {
   const sc = scUp(G);
   const f = river.at(sc);
   const half = f.half;
-  const nc = half * track(UP.a, G) + track(UP.b, G), h = track(UP.h, G);
+  let nc = half * track(UP.a, G) + track(UP.b, G); const h = track(UP.h, G);
   let psi = track(UP.psi, G), phi = track(UP.phi, G), fov = track(UP.fov, G);
   let x = f.x + f.nx * nc, y = h, z = f.z + f.nz * nc;
   // heading of the view (horizontal): psi from -T toward -N
   let a = psi * Math.PI / 180;
   let hx = -Math.cos(a) * f.tx + Math.sin(a) * f.tz, hz = -Math.cos(a) * f.tz - Math.sin(a) * f.tx;
   // 92 -> 100: rise and look down on the source; screen-up becomes -T at the source
+  // 91.8 -> 100: keep travelling up the narrowing stream, turn to aim at the crack (small, far, in firelight),
+  // push in low, then rise and tilt down into the final plate (unchanged: junction at (962, 352), 338 px tall)
   const k = easeInOutCubic(smoothstep(91.6, 99.0, G));
-  if (k > 0) {
+  if (G > 91.8) {
     const s0 = river.at(0);
     const J = { x: s0.x - s0.tx * (-CRACK.sJ) * CRACK.L, z: s0.z - s0.tz * (-CRACK.sJ) * CRACK.L };
-    // frame the crack like the title: junction 50 px above centre, 338 px tall (crack unit = 338 / 804 of the frame)
     const fovT = 30, H = 0.5 * (804 / 338) * CRACK.L / Math.tan(fovT * Math.PI / 360);
-    const back = (50 / 338) * CRACK.L;                     // the camera centre sits downstream of J
+    const back = (50 / 338) * CRACK.L;                     // the final camera centre sits downstream of J
     const tx = J.x + s0.tx * back, tz = J.z + s0.tz * back;
-    // a gentle arc: rise first, then swing over
-    const kp = easeInOutSine(smoothstep(91.6, 99.4, G)), kh = smoothstep(91.4, 97.5, G);
-    x = lerp(x, tx, kp); z = lerp(z, tz, kp); y = lerp(y, H, kh);
-    // heading turns to look upstream along the crack, pitch goes to straight down
-    const hT = Math.atan2(-s0.tz, -s0.tx), h0 = Math.atan2(hz, hx);
-    let dh = hT - h0; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
-    const hh = h0 + dh * k;
+    // position: approach along the stream, stay low until ~95, then rise over the source
+    const kp = easeInOutSine(smoothstep(91.8, 99.4, G)), kh = easeInOutCubic(smoothstep(94.6, 99.3, G));
+    x = lerp(x, tx, kp); z = lerp(z, tz, kp);
+    nc = lerp(nc, 0, kp);
+    y = lerp(lerp(y, 1.45, smoothstep(92, 94.6, G)), H, kh);
+    // aim: the junction first, then the point under the final camera (so J ends 50 px above centre)
+    const ka = smoothstep(96.6, 99.3, G);
+    const ax = lerp(J.x, tx, ka), az = lerp(J.z, tz, ka);
+    const dx = ax - x, dz = az - z, dy = 0.0 - y, dh = Math.hypot(dx, dz);
+    const hA = Math.atan2(dz, dx), pA = dh > 1e-4 ? Math.atan2(dy, dh) * 180 / Math.PI : -90;
+    const h0 = Math.atan2(hz, hx), hT = Math.atan2(-s0.tz, -s0.tx);
+    const wrap = d => { while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+    const kAim = easeInOutSine(smoothstep(91.8, 93.8, G));
+    let hh = h0 + wrap(hA - h0) * kAim;
+    hh = hh + wrap(hT - hh) * smoothstep(96.4, 98.8, G);     // straight down keeps screen-up = upstream (-T)
     hx = Math.cos(hh); hz = Math.sin(hh);
-    phi = lerp(phi, -90, easeInOutCubic(smoothstep(92.5, 99.6, G)));
+    phi = lerp(phi, pA, kAim);
+    phi = lerp(phi, -90, smoothstep(98.4, 99.4, G));
     fov = lerp(fov, fovT, k);
   }
   return { x, y, z, hx, hz, phi, fov, sc, nc, h };

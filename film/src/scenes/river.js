@@ -149,7 +149,7 @@ export default class RiverScene {
       const half = R.at(sView).half, speed = flowSpeed(n, half, V_MAX);
       const Tv = viewTime(sView);
       it.path = 0; it.s = sView - speed * (Tv - G_REF); it.off = [h, n]; it.speed = speed;
-      if (era > 0) it.show = [Tv - G_REF - (era >= 5 ? 7 : 9), Tv - G_REF + (era >= 5 ? 5 : 6.5), 1.2, 1.2];
+      if (era > 0) it.show = [Tv - G_REF - (era >= 5 ? 7 : 9), Tv - G_REF + (era >= 5 ? 9.5 : 6.5), 1.2, 1.2];
       if (it.reveal) it.reveal = [it.reveal[0] + Tv - G_REF, it.reveal[1] + Tv - G_REF];
       items.push(it);
       return { speed, Tv, s0: it.s };
@@ -864,7 +864,7 @@ export default class RiverScene {
       this.streams.mesh.visible = true;
 
       // the source: firelight and the crack (from the yarrow era on, and at the start of the return)
-      const fireK = mode === 'return' ? 0.45 * (1 - smoothstep(160.6, 162.0, G)) : smoothstep(88.5, 95.5, G);
+      const fireK = mode === 'return' ? 0.45 * (1 - smoothstep(160.6, 162.0, G)) : smoothstep(88.5, 94.0, G);
       if (fireK > 0.002) {
         const breathe = 1 + 0.1 * Math.sin(G * 2 * Math.PI / 4.1) + 0.05 * Math.sin(G * 2 * Math.PI / 2.63 + 1.3);
         this.fire.material.uniforms.uI.value = 0.3 * fireK * breathe;
