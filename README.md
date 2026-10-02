@@ -17,6 +17,8 @@
 [原聲帶 · Soundtrack (FLAC)](https://github.com/f0909172434/ORACLE/releases/download/v3.0/oracle_soundtrack.flac) ·
 [所有版本 · Release](https://github.com/f0909172434/ORACLE/releases/tag/v3.0)
 
+線上觀看 · Watch online: [YouTube](https://youtu.be/kQH1PZRkn00) · [bilibili](https://www.bilibili.com/video/BV1yaH86EE3G)
+
 4:30 · 1920×1080 (2.39:1) · 24 fps · 48 kHz stereo · 繁體中文 / English
 
 </div>

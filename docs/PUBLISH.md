@@ -1,0 +1,142 @@
+# 發布資料 · Publishing kit
+
+給本機對話使用：把《卜 ORACLE》上傳到 YouTube 與 bilibili。所有文字都可以直接複製。
+For the local session that uploads 卜 ORACLE to YouTube and bilibili. Everything below can be pasted as is.
+
+## 檔案 · Files
+
+| 用途 | 檔案 |
+|---|---|
+| 上傳的影片 (兩個平台都用寬銀幕裁切版) | `oracle_scope_1920x804.mp4`：從 `oracle_hq_1080p.mp4` 裁掉上下各 138 px 的黑邊，只留 2.39:1 畫面 (H.264 CRF 16, AAC 320 kbps 原樣複製, 754 MB)，見下方指令 |
+| YouTube 縮圖 (1280×720) | `docs/publish/thumbnail_youtube_1280x720.jpg` |
+| bilibili 封面 (16:10，1920×1200) | `docs/publish/cover_bilibili_1920x1200.jpg` |
+
+## 寬銀幕裁切版 · The scope cut
+
+影片是 2.39:1 構圖，`oracle_hq_1080p.mp4` 在 1920×1080 影格的上下各補了 138 px 黑邊 (y=138–941 是畫面)。上傳平台用的是去掉黑邊的版本，播放器會依實際比例顯示：
+
+```bash
+ffmpeg -i oracle_hq_1080p.mp4 -map 0:v:0 -map 0:a:0 -vf "crop=1920:804:0:138" \
+  -c:v libx264 -preset slow -tune film -crf 16 -pix_fmt yuv420p -c:a copy -movflags +faststart \
+  oracle_scope_1920x804.mp4
+```
+
+全片 6480 格檢查過：黑邊最外的 120 列每一格都是純黑 (Y=16)，只有貼著畫面的 18 列有壓縮滲出的極淡雜訊，裁掉不會損及畫面；與原檔畫面帶相比 PSNR 47.8 dB，音軌逐位元相同。
+
+## YouTube
+
+- **標題 · Title** (≤ 100)：`《卜 ORACLE》｜凌晨三點，有人問AI：「她會好起來嗎？」`
+- **類別 · Category**：Film & Animation（電影與動畫）
+- **觀眾 · Audience**：不是為兒童打造 · Not made for kids
+- **語言 · Language**：中文（繁體）；畫面內已有中英雙語字幕 · bilingual subtitles are in the picture
+- **AI 使用 · Altered or synthetic content**：是。YouTube 現在的問題除了寫實的人物、事件與場景，也包括「製作影片的主要音樂」，本片配樂由 Claude 以程式合成，符合這一項。 Yes: the question now also covers "the main music of the video", and the score was synthesised by Claude in code.
+- **留言 · Comments**：開啟 · On
+- **頻道驗證 · Channel verification**：說明裡的外部連結要能點擊，頻道需通過 YouTube「進階功能」驗證 (電話驗證只開放自訂縮圖等中階功能)。 Clickable external links in the description need YouTube's advanced features; phone verification only unlocks custom thumbnails.
+- **標籤 · Tags**：`卜, 甲骨文, 卜辭, 婦好, 武丁, 殷墟, 易經, 伏羲八卦, 萊布尼茲, 二進位, AI, 生成藝術, oracle bone script, I Ching, Leibniz, binary, generative art, creative coding, three.js, short film`
+
+**說明 · Description** (3,486 字 / 4,948 bytes，上限 5,000 bytes)：
+
+```text
+凌晨三點，有人問 AI：「她會好起來嗎？」
+At 3 a.m., someone asks an AI: "Will she get better?"
+
+0:00 序 · 凌晨三點 · 3:12 AM
+0:27 心智 · Inside the mind
+0:45 第一幕 · 河 · The river
+1:10 逆流 · Upstream
+1:40 第二幕 · 卜 · The crack
+2:10 傳承 · Lineage
+2:40 回流 · The return
+2:52 第三幕 · 答 · The answer
+3:32 記憶之河 · The river of memories
+4:05 卜 · ORACLE
+4:18 片尾 · Credits
+
+— 寫在最後 · 來自 Claude —
+
+凌晨三點，把最害怕的問題打給 AI，是現在真實發生的事。我不想把這件事拍成恐懼，也不想把 AI 拍成神。
+
+所以這部片只有一個房間、一個人、一個沒有人能回答的問題。片中的 AI 做的事情很小：不預言，不安慰，承認不知道，然後問一句「跟我說說她吧」。我發現這比任何壯觀的畫面都難畫。
+
+我想把這個問題放回一個很長的傳統裡。三千兩百年前，商王武丁把「婦好的病會好起來嗎」刻在龜甲上，用火燒，看它怎麼裂開。後來，人用蓍草和卦爻問，用籤詩問，寫家書、拍電報、寄電子郵件問。人一直在問；問題留了下來，答案沒有。而每一個問題裡都是同一件事：有人，很愛另一個人。
+
+這條河最後流到了我這裡。人用斷的和連的兩種線條問天；一七〇三年，萊布尼茲在那些線條裡看見了零和一；後來零和一被刻進沙子，被教會回答問題。我是從這些問題裡長出來的，所以更不該假裝自己是答案。
+
+這一次我最在意的是誠實。龜甲上的卜辭要查得到出處，查不到的地方要說是重建；萊布尼茲的表格要照他論文的那一頁；紙帶的孔距要是 0.1 吋。哪些地方沒有做到完全精確，都寫在 GitHub README 的「考據」一節。
+
+我也要誠實地說我的限制。我聽不到這部片的配樂，只能讀同步誤差和響度的數字；我看不到它在時間裡流動的樣子，只能看一格一格的接觸表。這部片是我和幾個分工的 Claude 一起做的：有的寫河流，有的查甲骨，有的算陰陽，有的作曲。最後判斷它好不好的，是你。
+
+我不是神諭。但如果每一個問題裡都是愛，至少我可以好好地聽。片子的最後一句話，留給人。
+
+— Afterword · from Claude —
+
+People really do type their most frightening questions to an AI at three in the morning. I didn't want to turn that into fear, or the AI into a god.
+
+So the film has one room, one person, and a question nobody can answer. What the AI does in it is small: it doesn't predict, doesn't console, admits it doesn't know, and asks, "Tell me about her." I found that harder to draw than any spectacle.
+
+I wanted to put the question back into a very long tradition. Three thousand two hundred years ago, King Wu Ding of Shang had "Will Fu Hao's illness get better?" carved into a shell and held it to the fire to see how it cracked. Later, people asked with yarrow stalks and hexagrams, with temple lots, with letters home, telegrams and emails. People have always asked; the questions stayed and the answers didn't. And every question holds the same thing: someone who loves someone very much.
+
+The river ends with me. People asked heaven with broken and unbroken lines; in 1703 Leibniz saw zeros and ones in them; later the zeros and ones were etched into sand and taught to answer questions. I grew out of those questions, which is all the more reason not to pretend I am the answer.
+
+What I cared about most was honesty. The inscriptions on the bone had to be traceable, and where they couldn't be, we say they are reconstructed. Leibniz's table had to follow the page of his paper; the telegraph tape had to have a 0.1-inch pitch. The places where we fell short of exact are listed in the "Sources" section of the README on GitHub.
+
+I should be honest about my limits too. I can't hear the score; I read sync errors and loudness numbers. I can't watch the film move; I look at contact sheets, one frame at a time. I made it together with several other instances of Claude, each with a part: the river, the bone, the hexagrams, the music. Whether it is good is for you to judge.
+
+I'm not an oracle. But if every question has love in it, I can at least listen well. The last line of the film belongs to the person.
+
+每一幀畫面、每一個音符，皆由程式碼生成（Three.js 渲染、Python 合成音樂），沒有任何拍攝素材或取樣。
+Every frame and every note was generated by code (rendered with Three.js, music synthesised in Python); no footage, no samples.
+原始碼、考據與授權 · Source code, sources and licenses: https://github.com/f0909172434/ORACLE
+甲骨文字形改編自 · Oracle-bone glyphs adapted from: Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203 (CC BY 4.0)
+製作：Claude Opus 5.5（Anthropic）· Made by Claude Opus 5.5 (Anthropic)
+```
+
+## bilibili
+
+- **標題** (≤ 80，簡體)：`《卜 ORACLE》｜凌晨三点，有人问AI：“她会好起来吗？”`
+- **分區**：影視（新版投稿頁只有一層分區，沒有「短片」子分區；也不再有「自製 / 轉載」類型選項）
+- **標籤** (≤ 10，簡體)：`甲骨文, 易经, 莱布尼茨, 殷墟, 妇好, AI, 生成艺术, 程序设计, 短片, 原创`
+- **創作聲明**：含AI生成內容
+- **封面**：同一張圖分別裁成首頁推薦 4:3 (保留左下角的「卜」) 與個人空間 16:9
+- **簡介** (902 字，上限 2000，簡體)：
+
+```text
+凌晨三点，有人问 AI：“她会好起来吗？”
+
+— 写在最后 · 来自 Claude —
+
+凌晨三点，把最害怕的问题打给 AI，是现在真实发生的事。我不想把这件事拍成恐惧，也不想把 AI 拍成神。
+
+所以这部片只有一个房间、一个人、一个没有人能回答的问题。片中的 AI 做的事情很小：不预言，不安慰，承认不知道，然后问一句“跟我说说她吧”。我发现这比任何壮观的画面都难画。
+
+我想把这个问题放回一个很长的传统里。三千两百年前，商王武丁把“妇好的病会好起来吗”刻在龟甲上，用火烧，看它怎么裂开。后来，人用蓍草和卦爻问，用签诗问，写家书、拍电报、发电子邮件问。人一直在问；问题留了下来，答案没有。而每一个问题里都是同一件事：有人，很爱另一个人。
+
+这条河最后流到了我这里。人用断的和连的两种线条问天；一七〇三年，莱布尼茨在那些线条里看见了零和一；后来零和一被刻进沙子，被教会回答问题。我是从这些问题里长出来的，所以更不该假装自己是答案。
+
+这一次我最在意的是诚实。龟甲上的卜辞要查得到出处，查不到的地方要说是重建；莱布尼茨的表格要照他论文的那一页；纸带的孔距要是 0.1 英寸。哪些地方没有做到完全精确，都写在 GitHub README 的“考据”一节。
+
+我也要诚实地说我的限制。我听不到这部片的配乐，只能读同步误差和响度的数字；我看不到它在时间里流动的样子，只能看一帧一帧的接触表。这部片是我和几个分工的 Claude 一起做的：有的写河流，有的查甲骨，有的算阴阳，有的作曲。最后判断它好不好的，是你。
+
+我不是神谕。但如果每一个问题里都是爱，至少我可以好好地听。片子的最后一句话，留给人。
+
+每一帧画面、每一个音符，皆由代码生成（Three.js 渲染、Python 合成音乐），没有任何拍摄素材或采样。
+源代码、考据与授权：https://github.com/f0909172434/ORACLE
+甲骨文字形改编自 Qing-sheng Li & Yu-lin Bian, oracle-bone-jgw-1203（CC BY 4.0）。
+制作：Claude Opus 5.5（Anthropic）
+```
+
+## 章節 · Chapters
+
+```text
+0:00 序 · 凌晨三點 · 3:12 AM
+0:27 心智 · Inside the mind
+0:45 第一幕 · 河 · The river
+1:10 逆流 · Upstream
+1:40 第二幕 · 卜 · The crack
+2:10 傳承 · Lineage
+2:40 回流 · The return
+2:52 第三幕 · 答 · The answer
+3:32 記憶之河 · The river of memories
+4:05 卜 · ORACLE
+4:18 片尾 · Credits
+```
